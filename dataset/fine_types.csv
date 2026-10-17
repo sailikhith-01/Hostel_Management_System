@@ -1,0 +1,6 @@
+fine_type_id,name,base
+1,Late entry,100
+2,Noise violation,200
+3,Untidy room,150
+4,Unauthorized guest,500
+5,Property damage,1000

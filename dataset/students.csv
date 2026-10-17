@@ -1,0 +1,301 @@
+student_id,gender,block_number,true_persona,q1,q2,q3,q4,q5,q6,q7,q8,q9,q10
+1,F,C,Studious Early Bird,2,1,4,silent,3,veg,2,1,hostel,1
+2,M,A,Studious Early Bird,2,1,5,library,3,veg,2,2,home,1
+3,M,B,Studious Early Bird,1,2,5,library,3,egg,1,2,hostel,2
+4,F,C,Messy Gamer,4,4,1,music,1,nonveg,3,3,hostel,3
+5,F,C,Messy Gamer,4,4,2,silent,1,nonveg,3,3,hostel,3
+6,F,C,Social Night Owl,3,3,2,group,2,egg,4,4,out,4
+7,F,C,Balanced Average,3,2,4,group,2,nonveg,3,3,hostel,3
+8,M,B,Studious Early Bird,1,1,4,library,3,egg,2,2,home,1
+9,F,C,Studious Early Bird,2,2,4,library,4,veg,2,1,home,1
+10,F,C,Studious Early Bird,2,1,4,library,3,veg,2,2,hostel,1
+11,M,B,Social Night Owl,3,3,3,music,1,nonveg,5,4,out,5
+12,M,A,Messy Gamer,4,4,2,silent,1,nonveg,3,3,hostel,2
+13,F,C,Social Night Owl,3,3,2,music,2,nonveg,4,5,out,4
+14,F,C,Social Night Owl,4,3,3,group,1,nonveg,4,5,out,5
+15,M,B,Studious Early Bird,1,1,5,library,3,veg,1,1,home,1
+16,M,A,Messy Gamer,4,4,1,silent,1,nonveg,3,2,hostel,3
+17,M,A,Balanced Average,2,3,3,library,3,nonveg,3,3,hostel,3
+18,M,B,Social Night Owl,3,4,2,music,2,nonveg,4,4,out,4
+19,F,C,Studious Early Bird,1,2,4,silent,3,veg,2,2,home,1
+20,F,C,Messy Gamer,4,4,2,music,2,nonveg,3,3,hostel,2
+21,F,C,Social Night Owl,3,4,2,music,2,egg,4,5,out,4
+22,F,C,Messy Gamer,4,4,2,silent,1,nonveg,4,3,hostel,3
+23,M,B,Balanced Average,2,2,4,library,2,veg,3,3,hostel,3
+24,F,C,Balanced Average,3,2,3,group,2,veg,3,3,hostel,3
+25,M,B,Messy Gamer,4,4,1,silent,1,nonveg,4,2,hostel,2
+26,M,B,Studious Early Bird,2,2,4,library,3,veg,2,1,home,1
+27,M,B,Messy Gamer,4,4,1,silent,2,nonveg,4,2,hostel,3
+28,F,C,Balanced Average,3,2,3,library,2,nonveg,3,3,hostel,3
+29,F,C,Messy Gamer,4,4,1,music,1,nonveg,3,2,hostel,3
+30,M,B,Messy Gamer,4,4,2,music,2,nonveg,4,2,hostel,3
+31,F,C,Balanced Average,2,3,4,group,3,nonveg,3,3,hostel,3
+32,M,B,Social Night Owl,3,3,3,group,1,nonveg,5,4,out,4
+33,M,A,Social Night Owl,3,4,3,music,2,egg,5,4,out,4
+34,M,B,Social Night Owl,4,3,2,music,2,nonveg,5,5,out,5
+35,F,C,Balanced Average,3,3,4,group,3,nonveg,3,3,hostel,3
+36,F,C,Messy Gamer,4,4,1,silent,1,nonveg,4,2,hostel,2
+37,M,B,Messy Gamer,4,4,1,music,2,nonveg,4,3,hostel,3
+38,M,B,Balanced Average,2,3,3,library,3,nonveg,3,3,hostel,3
+39,F,C,Social Night Owl,3,3,3,music,1,egg,4,5,out,4
+40,M,B,Messy Gamer,4,4,2,music,2,nonveg,3,3,hostel,2
+41,M,A,Studious Early Bird,1,1,4,silent,3,veg,1,1,home,1
+42,F,C,Social Night Owl,4,4,2,music,1,egg,4,4,out,5
+43,M,A,Studious Early Bird,1,1,5,silent,3,egg,2,2,hostel,2
+44,M,B,Balanced Average,3,3,3,library,2,nonveg,3,3,hostel,3
+45,M,A,Studious Early Bird,2,1,5,library,4,veg,2,2,hostel,2
+46,M,B,Messy Gamer,4,4,1,silent,1,nonveg,4,2,hostel,3
+47,M,A,Studious Early Bird,2,1,5,library,4,egg,2,2,home,2
+48,M,B,Messy Gamer,4,4,1,silent,1,nonveg,4,3,hostel,2
+49,M,B,Social Night Owl,4,3,2,group,1,nonveg,5,4,out,4
+50,M,B,Balanced Average,3,2,3,library,3,veg,3,3,hostel,3
+51,F,C,Studious Early Bird,2,1,4,silent,4,veg,2,2,home,2
+52,F,C,Balanced Average,2,2,3,group,3,veg,3,3,home,3
+53,M,A,Balanced Average,3,3,3,group,3,nonveg,3,3,home,3
+54,F,C,Social Night Owl,3,3,3,music,1,nonveg,4,5,out,5
+55,M,B,Messy Gamer,4,4,2,silent,1,nonveg,4,3,hostel,2
+56,M,A,Messy Gamer,4,4,2,music,1,nonveg,4,2,hostel,3
+57,M,B,Messy Gamer,4,4,2,music,2,nonveg,3,3,hostel,3
+58,M,B,Studious Early Bird,2,1,5,library,3,veg,2,2,home,1
+59,M,B,Social Night Owl,4,4,2,music,1,nonveg,5,4,out,4
+60,M,A,Balanced Average,2,3,4,library,3,nonveg,3,3,hostel,3
+61,M,A,Social Night Owl,4,4,3,group,1,egg,5,5,out,5
+62,F,C,Balanced Average,3,3,4,group,2,nonveg,3,3,home,3
+63,F,C,Balanced Average,3,3,3,library,2,veg,3,3,hostel,3
+64,F,C,Balanced Average,2,3,3,group,3,nonveg,3,3,home,3
+65,F,C,Balanced Average,3,2,3,group,3,veg,3,3,home,3
+66,M,A,Messy Gamer,4,4,1,music,2,nonveg,4,2,hostel,3
+67,F,C,Social Night Owl,3,4,2,group,1,nonveg,5,5,out,5
+68,F,C,Studious Early Bird,2,2,4,silent,4,egg,2,2,home,2
+69,M,A,Balanced Average,2,2,4,library,3,nonveg,3,3,hostel,3
+70,F,C,Studious Early Bird,2,2,4,library,3,veg,2,1,hostel,1
+71,M,B,Studious Early Bird,1,1,5,library,4,veg,1,1,home,2
+72,M,B,Balanced Average,3,3,3,library,2,veg,3,3,hostel,3
+73,M,A,Messy Gamer,4,4,2,music,2,nonveg,3,3,hostel,3
+74,F,C,Social Night Owl,4,4,3,music,1,nonveg,4,5,out,4
+75,M,A,Social Night Owl,4,4,2,group,1,egg,5,5,out,5
+76,M,B,Balanced Average,3,2,4,library,2,nonveg,3,3,home,3
+77,M,A,Studious Early Bird,2,1,4,silent,3,veg,1,1,home,1
+78,F,C,Studious Early Bird,1,1,5,silent,3,veg,1,1,home,1
+79,F,C,Messy Gamer,4,4,1,music,1,nonveg,4,3,hostel,2
+80,M,A,Studious Early Bird,2,2,4,silent,4,egg,2,1,home,2
+81,M,A,Messy Gamer,4,4,2,music,2,nonveg,4,3,hostel,2
+82,F,C,Social Night Owl,3,4,3,group,2,egg,4,5,out,5
+83,F,C,Messy Gamer,4,4,1,silent,1,nonveg,4,2,hostel,2
+84,F,C,Studious Early Bird,2,1,5,library,4,veg,2,2,home,1
+85,F,C,Social Night Owl,4,3,2,group,2,nonveg,5,4,out,4
+86,F,C,Messy Gamer,4,4,2,music,1,nonveg,3,3,hostel,2
+87,F,C,Studious Early Bird,1,2,5,library,4,veg,2,2,home,1
+88,M,A,Social Night Owl,3,3,3,group,2,egg,5,5,out,4
+89,F,C,Studious Early Bird,1,2,5,library,3,veg,2,1,hostel,1
+90,M,A,Social Night Owl,4,4,2,music,2,egg,4,4,out,4
+91,F,C,Messy Gamer,4,4,1,music,1,nonveg,4,3,hostel,3
+92,M,B,Studious Early Bird,1,2,5,silent,4,veg,1,2,home,1
+93,M,B,Messy Gamer,4,4,1,silent,2,nonveg,3,2,hostel,2
+94,M,A,Social Night Owl,3,3,3,group,2,egg,5,4,out,4
+95,M,B,Messy Gamer,4,4,1,music,2,nonveg,3,2,hostel,3
+96,M,A,Balanced Average,2,3,3,library,3,veg,3,3,home,3
+97,F,C,Studious Early Bird,1,1,4,library,4,veg,2,2,home,2
+98,M,B,Studious Early Bird,2,1,5,silent,4,egg,2,1,home,1
+99,F,C,Social Night Owl,4,4,2,music,2,egg,5,4,out,5
+100,F,C,Messy Gamer,4,4,1,music,2,nonveg,3,2,hostel,2
+101,M,A,Studious Early Bird,1,2,4,silent,3,veg,2,1,home,2
+102,F,C,Social Night Owl,4,4,2,music,2,egg,4,5,out,5
+103,M,B,Balanced Average,2,2,4,group,3,nonveg,3,3,hostel,3
+104,M,B,Balanced Average,2,3,3,group,3,nonveg,3,3,home,3
+105,F,C,Messy Gamer,4,4,1,silent,2,nonveg,4,2,hostel,2
+106,M,B,Social Night Owl,4,4,2,music,1,egg,4,4,out,4
+107,M,A,Messy Gamer,4,4,2,silent,1,nonveg,3,2,hostel,3
+108,M,A,Messy Gamer,4,4,1,music,1,nonveg,4,3,hostel,3
+109,M,B,Studious Early Bird,1,2,4,silent,4,veg,1,2,home,1
+110,F,C,Balanced Average,3,2,3,group,3,veg,3,3,home,3
+111,M,B,Messy Gamer,4,4,1,silent,2,nonveg,3,3,hostel,2
+112,M,B,Balanced Average,3,3,3,library,3,nonveg,3,3,hostel,3
+113,M,A,Messy Gamer,4,4,2,music,2,nonveg,3,3,hostel,3
+114,M,B,Balanced Average,2,2,4,library,2,veg,3,3,home,3
+115,M,A,Messy Gamer,4,4,2,music,2,nonveg,3,2,hostel,3
+116,M,B,Social Night Owl,3,3,3,group,1,egg,5,5,out,5
+117,F,C,Balanced Average,2,2,4,group,3,veg,3,3,home,3
+118,M,A,Social Night Owl,3,3,2,music,1,egg,4,5,out,5
+119,F,C,Social Night Owl,3,3,3,group,2,egg,5,4,out,5
+120,F,C,Studious Early Bird,2,1,4,silent,4,veg,1,1,home,1
+121,M,B,Social Night Owl,4,3,3,music,2,nonveg,5,4,out,4
+122,M,B,Studious Early Bird,1,1,4,library,3,egg,1,2,home,2
+123,M,A,Balanced Average,2,2,3,library,3,nonveg,3,3,hostel,3
+124,M,B,Messy Gamer,4,4,1,music,1,nonveg,3,3,hostel,2
+125,M,A,Studious Early Bird,2,2,4,silent,4,egg,1,1,home,2
+126,M,B,Balanced Average,3,3,3,group,3,veg,3,3,hostel,3
+127,M,A,Studious Early Bird,2,2,5,library,3,egg,1,1,home,2
+128,M,B,Balanced Average,3,2,3,group,3,nonveg,3,3,home,3
+129,F,C,Balanced Average,2,2,3,library,3,nonveg,3,3,hostel,3
+130,M,B,Messy Gamer,4,4,2,silent,2,nonveg,3,3,hostel,2
+131,F,C,Balanced Average,2,2,4,group,3,veg,3,3,home,3
+132,M,B,Messy Gamer,4,4,2,music,1,nonveg,3,3,hostel,3
+133,M,A,Balanced Average,3,3,4,library,2,veg,3,3,home,3
+134,M,A,Balanced Average,3,3,4,group,3,nonveg,3,3,hostel,3
+135,M,A,Messy Gamer,4,4,1,silent,2,nonveg,3,2,hostel,2
+136,M,A,Social Night Owl,4,4,3,music,1,nonveg,4,5,out,5
+137,F,C,Social Night Owl,4,4,3,music,1,nonveg,4,4,out,4
+138,M,B,Balanced Average,3,2,3,library,2,nonveg,3,3,hostel,3
+139,F,C,Balanced Average,2,3,3,library,3,veg,3,3,hostel,3
+140,M,B,Balanced Average,2,3,3,group,2,nonveg,3,3,home,3
+141,M,A,Balanced Average,3,3,3,library,3,veg,3,3,hostel,3
+142,M,B,Messy Gamer,4,4,1,silent,1,nonveg,3,3,hostel,3
+143,F,C,Balanced Average,2,2,3,library,3,veg,3,3,home,3
+144,M,B,Balanced Average,2,3,3,library,2,nonveg,3,3,hostel,3
+145,F,C,Balanced Average,3,2,4,library,2,veg,3,3,hostel,3
+146,F,C,Studious Early Bird,1,1,5,silent,4,egg,1,1,home,2
+147,M,B,Balanced Average,2,3,3,group,3,veg,3,3,home,3
+148,M,B,Balanced Average,2,3,4,group,3,veg,3,3,hostel,3
+149,M,A,Studious Early Bird,1,2,4,silent,3,egg,2,1,hostel,1
+150,M,B,Social Night Owl,4,4,2,group,1,nonveg,5,5,out,4
+151,F,C,Social Night Owl,4,4,2,group,2,egg,5,5,out,5
+152,M,A,Balanced Average,2,3,3,library,2,nonveg,3,3,hostel,3
+153,M,A,Messy Gamer,4,4,1,silent,1,nonveg,4,2,hostel,2
+154,F,C,Social Night Owl,4,4,2,music,1,nonveg,5,4,out,5
+155,M,B,Messy Gamer,4,4,2,music,2,nonveg,3,3,hostel,2
+156,M,B,Balanced Average,2,2,3,library,3,nonveg,3,3,hostel,3
+157,M,A,Balanced Average,3,3,4,library,3,veg,3,3,home,3
+158,M,A,Studious Early Bird,1,1,4,library,3,veg,1,1,hostel,1
+159,F,C,Balanced Average,3,3,3,group,3,veg,3,3,hostel,3
+160,F,C,Balanced Average,2,2,3,group,2,veg,3,3,hostel,3
+161,M,B,Balanced Average,2,2,4,group,2,veg,3,3,hostel,3
+162,M,A,Social Night Owl,4,4,2,music,1,nonveg,5,5,out,4
+163,F,C,Messy Gamer,4,4,2,silent,1,nonveg,4,2,hostel,2
+164,F,C,Social Night Owl,4,4,3,music,1,egg,4,4,out,4
+165,M,B,Balanced Average,3,2,4,library,3,veg,3,3,hostel,3
+166,F,C,Balanced Average,3,2,3,group,3,veg,3,3,hostel,3
+167,M,A,Studious Early Bird,2,2,5,library,3,veg,1,1,home,2
+168,F,C,Balanced Average,2,3,3,library,3,veg,3,3,hostel,3
+169,F,C,Social Night Owl,3,4,2,music,2,egg,5,5,out,4
+170,M,B,Messy Gamer,4,4,2,music,1,nonveg,3,3,hostel,2
+171,M,A,Balanced Average,3,3,4,library,3,veg,3,3,home,3
+172,M,A,Balanced Average,3,3,3,library,3,nonveg,3,3,home,3
+173,F,C,Social Night Owl,3,4,2,group,2,nonveg,5,5,out,5
+174,M,B,Social Night Owl,4,3,3,group,2,egg,4,5,out,4
+175,M,B,Social Night Owl,3,4,3,group,1,nonveg,4,5,out,4
+176,M,B,Balanced Average,2,3,3,library,2,nonveg,3,3,home,3
+177,M,B,Messy Gamer,4,4,2,music,1,nonveg,4,3,hostel,3
+178,M,A,Studious Early Bird,1,1,4,silent,3,egg,2,2,hostel,2
+179,F,C,Social Night Owl,4,4,2,music,2,egg,5,4,out,4
+180,M,A,Studious Early Bird,1,2,5,silent,4,veg,2,2,home,2
+181,F,C,Balanced Average,3,3,4,group,3,veg,3,3,home,3
+182,M,A,Social Night Owl,3,4,3,music,2,egg,4,5,out,4
+183,M,B,Social Night Owl,4,3,3,music,2,nonveg,4,5,out,5
+184,F,C,Balanced Average,3,3,3,group,2,veg,3,3,hostel,3
+185,F,C,Messy Gamer,4,4,1,silent,2,nonveg,3,3,hostel,3
+186,M,A,Messy Gamer,4,4,2,music,1,nonveg,3,2,hostel,3
+187,F,C,Balanced Average,2,2,3,group,3,nonveg,3,3,hostel,3
+188,F,C,Messy Gamer,4,4,2,silent,2,nonveg,3,2,hostel,3
+189,M,B,Balanced Average,3,3,4,library,2,veg,3,3,hostel,3
+190,M,B,Studious Early Bird,1,2,5,silent,4,veg,2,1,home,2
+191,M,B,Messy Gamer,4,4,2,silent,1,nonveg,4,2,hostel,2
+192,M,B,Studious Early Bird,2,1,4,library,3,egg,1,2,home,1
+193,M,A,Studious Early Bird,2,1,5,silent,3,veg,1,2,hostel,1
+194,F,C,Social Night Owl,4,3,2,group,1,egg,4,5,out,4
+195,M,A,Studious Early Bird,2,2,4,library,3,veg,1,1,hostel,2
+196,M,A,Social Night Owl,4,3,2,music,1,nonveg,5,5,out,5
+197,M,A,Messy Gamer,4,4,1,music,1,nonveg,4,3,hostel,2
+198,M,B,Studious Early Bird,1,1,5,library,3,egg,2,2,hostel,2
+199,M,A,Studious Early Bird,1,1,4,library,4,egg,2,2,hostel,1
+200,M,A,Messy Gamer,4,4,2,music,1,nonveg,4,2,hostel,2
+201,M,B,Studious Early Bird,1,2,4,silent,3,veg,1,1,home,2
+202,F,C,Messy Gamer,4,4,1,silent,2,nonveg,4,2,hostel,2
+203,M,B,Messy Gamer,4,4,1,music,1,nonveg,3,2,hostel,2
+204,M,A,Balanced Average,2,2,3,library,2,nonveg,3,3,hostel,3
+205,M,B,Studious Early Bird,1,1,4,silent,4,veg,2,2,home,2
+206,M,B,Studious Early Bird,2,2,4,library,4,egg,1,1,hostel,1
+207,M,A,Social Night Owl,3,4,2,group,2,nonveg,4,4,out,5
+208,M,A,Messy Gamer,4,4,2,music,1,nonveg,3,3,hostel,2
+209,M,A,Social Night Owl,4,4,3,group,2,egg,4,4,out,4
+210,F,C,Studious Early Bird,1,2,5,library,4,veg,2,1,home,2
+211,M,B,Studious Early Bird,2,1,4,library,3,veg,1,2,home,1
+212,F,C,Messy Gamer,4,4,2,music,1,nonveg,4,2,hostel,2
+213,M,A,Social Night Owl,4,4,2,group,1,nonveg,4,4,out,4
+214,M,B,Studious Early Bird,2,1,4,library,4,egg,1,2,home,1
+215,M,A,Social Night Owl,4,3,2,music,2,egg,5,5,out,4
+216,M,B,Social Night Owl,3,3,3,group,2,egg,5,5,out,5
+217,M,A,Messy Gamer,4,4,1,music,2,nonveg,3,2,hostel,2
+218,M,A,Social Night Owl,4,4,2,music,1,egg,5,4,out,4
+219,F,C,Social Night Owl,4,4,2,group,1,nonveg,4,4,out,4
+220,F,C,Balanced Average,2,2,4,group,3,veg,3,3,home,3
+221,F,C,Messy Gamer,4,4,1,music,2,nonveg,3,2,hostel,3
+222,F,C,Messy Gamer,4,4,1,music,2,nonveg,3,2,hostel,3
+223,F,C,Studious Early Bird,2,1,4,library,3,egg,1,1,home,2
+224,M,A,Messy Gamer,4,4,1,silent,2,nonveg,3,2,hostel,3
+225,M,B,Social Night Owl,4,4,3,group,1,egg,4,4,out,4
+226,M,B,Studious Early Bird,1,1,5,silent,4,veg,1,1,home,2
+227,F,C,Studious Early Bird,1,2,4,silent,3,egg,1,1,home,2
+228,F,C,Messy Gamer,4,4,2,music,1,nonveg,4,2,hostel,2
+229,M,B,Social Night Owl,3,3,3,music,2,nonveg,5,5,out,5
+230,F,C,Messy Gamer,4,4,2,music,2,nonveg,4,2,hostel,3
+231,M,B,Social Night Owl,3,3,2,music,2,egg,4,4,out,5
+232,F,C,Balanced Average,2,3,4,group,3,veg,3,3,hostel,3
+233,M,A,Social Night Owl,4,3,3,music,1,egg,5,4,out,5
+234,F,C,Balanced Average,3,3,3,library,2,nonveg,3,3,home,3
+235,F,C,Studious Early Bird,2,2,5,library,4,egg,1,1,home,2
+236,M,B,Studious Early Bird,2,1,4,library,4,egg,1,2,home,2
+237,M,B,Studious Early Bird,1,1,5,library,4,egg,2,1,hostel,2
+238,M,B,Balanced Average,3,2,3,group,3,nonveg,3,3,home,3
+239,M,A,Social Night Owl,3,4,2,group,2,egg,5,4,out,4
+240,M,B,Balanced Average,3,3,4,group,3,veg,3,3,hostel,3
+241,M,A,Social Night Owl,3,4,3,music,1,egg,4,4,out,4
+242,M,B,Messy Gamer,4,4,2,music,1,nonveg,4,3,hostel,2
+243,F,C,Messy Gamer,4,4,1,music,1,nonveg,4,3,hostel,3
+244,F,C,Messy Gamer,4,4,2,music,1,nonveg,4,3,hostel,3
+245,M,B,Studious Early Bird,1,2,4,library,4,egg,1,1,home,1
+246,M,A,Messy Gamer,4,4,1,silent,2,nonveg,4,3,hostel,3
+247,M,B,Balanced Average,3,2,3,library,2,veg,3,3,hostel,3
+248,M,A,Social Night Owl,4,3,3,music,1,egg,5,4,out,4
+249,M,B,Messy Gamer,4,4,2,silent,1,nonveg,4,3,hostel,3
+250,M,A,Studious Early Bird,2,1,5,silent,3,veg,1,1,home,2
+251,M,A,Balanced Average,3,2,3,group,3,nonveg,3,3,hostel,3
+252,M,B,Messy Gamer,4,4,1,silent,1,nonveg,3,2,hostel,2
+253,M,A,Balanced Average,3,2,3,group,2,veg,3,3,hostel,3
+254,M,B,Balanced Average,2,2,4,library,2,nonveg,3,3,home,3
+255,M,A,Studious Early Bird,1,2,4,library,4,egg,1,1,home,1
+256,F,C,Balanced Average,2,2,3,group,3,veg,3,3,home,3
+257,F,C,Social Night Owl,4,4,3,music,1,nonveg,4,5,out,5
+258,M,A,Studious Early Bird,1,1,4,silent,4,egg,2,2,hostel,2
+259,M,A,Studious Early Bird,2,2,5,library,4,veg,1,1,hostel,1
+260,M,B,Balanced Average,3,2,4,library,2,veg,3,3,home,3
+261,M,A,Studious Early Bird,2,1,4,library,3,egg,1,2,home,2
+262,M,A,Studious Early Bird,1,2,5,silent,3,egg,2,1,home,2
+263,M,A,Balanced Average,2,2,4,library,3,veg,3,3,hostel,3
+264,M,A,Studious Early Bird,1,1,4,library,3,egg,2,2,hostel,1
+265,M,B,Balanced Average,3,3,3,group,2,veg,3,3,hostel,3
+266,F,C,Studious Early Bird,1,2,4,library,3,egg,1,1,hostel,2
+267,M,B,Social Night Owl,3,4,2,music,2,egg,4,5,out,4
+268,F,C,Balanced Average,3,2,3,group,2,nonveg,3,3,hostel,3
+269,M,B,Messy Gamer,4,4,1,music,2,nonveg,3,2,hostel,3
+270,F,C,Messy Gamer,4,4,2,silent,2,nonveg,4,3,hostel,2
+271,F,C,Studious Early Bird,1,1,4,silent,4,veg,2,2,hostel,1
+272,F,C,Messy Gamer,4,4,2,silent,1,nonveg,3,3,hostel,3
+273,M,B,Messy Gamer,4,4,2,silent,2,nonveg,4,2,hostel,3
+274,M,A,Studious Early Bird,1,1,5,silent,4,egg,2,1,hostel,2
+275,M,B,Balanced Average,2,2,3,library,2,nonveg,3,3,home,3
+276,F,C,Social Night Owl,3,3,3,group,1,egg,4,4,out,5
+277,M,B,Social Night Owl,4,3,2,group,2,nonveg,4,4,out,5
+278,M,B,Messy Gamer,4,4,2,music,2,nonveg,4,2,hostel,2
+279,M,A,Studious Early Bird,1,1,5,silent,3,egg,1,1,hostel,2
+280,F,C,Messy Gamer,4,4,1,music,1,nonveg,4,3,hostel,3
+281,F,C,Balanced Average,2,3,3,group,2,veg,3,3,home,3
+282,F,C,Messy Gamer,4,4,2,music,1,nonveg,3,2,hostel,3
+283,F,C,Messy Gamer,4,4,2,silent,1,nonveg,3,2,hostel,2
+284,M,A,Messy Gamer,4,4,1,silent,2,nonveg,3,2,hostel,3
+285,F,C,Studious Early Bird,1,2,4,silent,4,egg,2,1,hostel,1
+286,M,A,Social Night Owl,4,4,3,music,2,egg,5,4,out,5
+287,M,A,Balanced Average,3,2,4,library,3,nonveg,3,3,hostel,3
+288,M,A,Messy Gamer,4,4,2,silent,1,nonveg,3,3,hostel,2
+289,F,C,Messy Gamer,4,4,2,music,1,nonveg,3,3,hostel,3
+290,M,A,Social Night Owl,3,3,3,music,1,nonveg,5,5,out,4
+291,M,A,Studious Early Bird,1,1,4,library,4,egg,2,1,hostel,2
+292,M,B,Messy Gamer,4,4,2,music,1,nonveg,4,2,hostel,3
+293,M,B,Balanced Average,2,2,4,group,2,veg,3,3,home,3
+294,M,B,Studious Early Bird,2,2,4,library,4,egg,1,1,home,1
+295,M,A,Social Night Owl,3,3,2,music,1,nonveg,5,4,out,4
+296,F,C,Messy Gamer,4,4,2,music,1,nonveg,4,2,hostel,3
+297,M,B,Balanced Average,2,2,4,library,2,veg,3,3,hostel,3
+298,F,C,Studious Early Bird,1,1,4,library,3,veg,2,2,home,1
+299,F,C,Balanced Average,3,3,4,group,3,veg,3,3,home,3
+300,M,B,Messy Gamer,4,4,1,music,1,nonveg,4,3,hostel,2
