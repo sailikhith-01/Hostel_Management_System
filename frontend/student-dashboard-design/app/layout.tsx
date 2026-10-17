@@ -3,8 +3,8 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'CampusStay | Student Dashboard',
-  description: 'Manage your college hostel room, fines, complaints, and activity from one place.',
+  title: 'CampusStay | Warden Command Center',
+  description: 'Monitor hostel occupancy, complaints, fine risk, and resident operations from one command center.',
   generator: 'v0.app',
   icons: {
     icon: [
