@@ -1,92 +1,551 @@
 'use client'
 
-import { useState } from 'react'
-import {
-  AlertTriangle,
-  ArrowUpRight,
-  Bell,
-  Building2,
-  CheckCircle2,
-  ChevronDown,
-  ClipboardList,
-  DollarSign,
-  LayoutDashboard,
-  MessageSquare,
-  MoreHorizontal,
-  Send,
-  ShieldCheck,
-  Users,
-} from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { api, ApiError } from '@/lib/api'
 
-import { Button } from '@/components/ui/button'
-
-type Risk = 'Low' | 'Medium' | 'High'
-
-const students: { name: string; id: string; block: string; fines: number; unpaid: string; score: string; risk: Risk }[] = [
-  { name: 'Aarav Mehta', id: 'CS24A102', block: 'A', fines: 0, unpaid: '$0', score: '12%', risk: 'Low' },
-  { name: 'Maya Patel', id: 'DS23B047', block: 'B', fines: 1, unpaid: '$25', score: '38%', risk: 'Medium' },
-  { name: 'Rohan Iyer', id: 'EE24A018', block: 'A', fines: 3, unpaid: '$120', score: '86%', risk: 'High' },
-  { name: 'Zoya Khan', id: 'ME23C091', block: 'C', fines: 2, unpaid: '$75', score: '64%', risk: 'Medium' },
-  { name: 'Nikhil Rao', id: 'IT24B063', block: 'B', fines: 0, unpaid: '$0', score: '08%', risk: 'Low' },
-]
-
-const riskStyles: Record<Risk, string> = {
-  Low: 'bg-emerald-50 text-emerald-700 ring-emerald-600/10',
-  Medium: 'bg-amber-50 text-amber-700 ring-amber-600/10',
-  High: 'bg-rose-50 text-rose-700 ring-rose-600/10',
+type Complaint = {
+  complaint_id: number
+  student_id: number
+  full_name: string
+  email: string
+  room_number: string
+  block_number: string
+  description: string
+  category: string
+  priority: string
+  confidence: number
+  status: string
+  created_at: string
+}
+type RiskReport = {
+  student_id: number
+  full_name: string
+  email: string
+  block_number: string
+  probability: number
+  risk_band: string
+  features: {
+    fines_3m: number
+    amount_3m: number
+    distinct_types_3m: number
+    unpaid_count: number
+    unpaid_amount: number
+    avg_days_to_pay: number
+  }
+}
+type DashboardData = {
+  summary: {
+    students: number
+    allocated_students: number
+    beds: number
+    open_complaints: number
+    paid_amount: number
+  }
+  reports: RiskReport[]
+  records: {
+    fines: { fine_id: number; student_id: number; full_name: string; amount: number; reason: string; issued_on: string; status: string }[]
+    gate_logs: { log_id: number; student_id: number; full_name: string; direction: string; logged_at: string }[]
+    payments: { payment_id: number; student_id: number; full_name: string; amount: number; paid_on: string; mode: string; reason: string }[]
+  }
 }
 
-export default function Page() {
-  const [sent, setSent] = useState<string[]>([])
+const currency = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' })
+const statuses = ['pending', 'in_progress', 'resolved', 'rejected']
+const PAGE_SIZE = 10
 
-  const sendReminder = (name: string) => {
-    setSent((current) => (current.includes(name) ? current : [...current, name]))
+export default function AdminDashboard() {
+  const router = useRouter()
+  const [data, setData] = useState<DashboardData | null>(null)
+  const [complaints, setComplaints] = useState<Complaint[]>([])
+  const [complaintFilter, setComplaintFilter] = useState('')
+  const [complaintSearch, setComplaintSearch] = useState('')
+  const [complaintPage, setComplaintPage] = useState(1)
+
+  const [riskSearch, setRiskSearch] = useState('')
+  const [riskPage, setRiskPage] = useState(1)
+
+  const [authorized, setAuthorized] = useState(false)
+  const [error, setError] = useState('')
+  const [busyComplaint, setBusyComplaint] = useState<number | null>(null)
+
+  const loadDashboard = useCallback(async () => {
+    const [summary, riskResult, records] = await Promise.all([
+      api<{ summary: DashboardData['summary'] }>('/api/admin/summary'),
+      api<{ reports: RiskReport[] }>('/api/admin/fine-risk'),
+      api<DashboardData['records']>('/api/admin/records'),
+    ])
+    setData({
+      summary: summary.summary,
+      reports: riskResult.reports,
+      records,
+    })
+  }, [])
+
+  const loadComplaints = useCallback(async (filter: string) => {
+    const result = await api<{ complaints: Complaint[] }>(
+      `/api/admin/complaints${filter ? `?status=${filter}` : ''}`,
+    )
+    setComplaints(result.complaints)
+  }, [])
+
+  useEffect(() => {
+    async function initialize() {
+      try {
+        const session = await api<{ user: { role: string } }>('/api/auth/session')
+        if (session.user.role !== 'admin') {
+          router.replace('/login')
+          return
+        }
+        setAuthorized(true)
+        await loadDashboard()
+      } catch (reason) {
+        if (reason instanceof ApiError && (reason.status === 401 || reason.status === 403)) {
+          router.replace('/login')
+        } else {
+          setError(reason instanceof Error ? reason.message : 'Could not load admin data')
+        }
+      }
+    }
+    void initialize()
+  }, [loadDashboard, router])
+
+  useEffect(() => {
+    if (!authorized) return
+    void loadComplaints(complaintFilter).catch((reason: unknown) => {
+      if (reason instanceof ApiError && reason.status === 401) {
+        router.replace('/login')
+      } else {
+        setError(reason instanceof Error ? reason.message : 'Could not load complaints')
+      }
+    })
+  }, [authorized, complaintFilter, loadComplaints, router])
+
+  async function updateStatus(complaintId: number, status: string) {
+    setBusyComplaint(complaintId)
+    setError('')
+    try {
+      await api(`/api/admin/complaints/${complaintId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      })
+      await loadComplaints(complaintFilter)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not update complaint status')
+    } finally {
+      setBusyComplaint(null)
+    }
+  }
+
+  async function logout() {
+    try {
+      await api('/api/auth/logout', { method: 'POST' })
+      router.replace('/login')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not sign out')
+    }
+  }
+
+  // Filtered & Paginated Complaints
+  const filteredComplaints = useMemo(() => {
+    if (!complaintSearch.trim()) return complaints
+    const q = complaintSearch.toLowerCase()
+    return complaints.filter(
+      (c) =>
+        c.full_name.toLowerCase().includes(q) ||
+        c.email.toLowerCase().includes(q) ||
+        c.description.toLowerCase().includes(q) ||
+        c.category.toLowerCase().includes(q) ||
+        c.block_number.toLowerCase().includes(q) ||
+        c.room_number.toLowerCase().includes(q),
+    )
+  }, [complaints, complaintSearch])
+
+  const paginatedComplaints = useMemo(() => {
+    const start = (complaintPage - 1) * PAGE_SIZE
+    return filteredComplaints.slice(start, start + PAGE_SIZE)
+  }, [filteredComplaints, complaintPage])
+
+  const totalComplaintPages = Math.max(1, Math.ceil(filteredComplaints.length / PAGE_SIZE))
+
+  // Filtered & Paginated Fine Risk Reports
+  const sortedRiskReports = useMemo(() => {
+    if (!data) return []
+    const list = [...data.reports].sort((left, right) => right.probability - left.probability)
+    if (!riskSearch.trim()) return list
+    const q = riskSearch.toLowerCase()
+    return list.filter(
+      (r) =>
+        r.full_name.toLowerCase().includes(q) ||
+        r.email.toLowerCase().includes(q) ||
+        r.block_number.toLowerCase().includes(q) ||
+        r.risk_band.toLowerCase().includes(q),
+    )
+  }, [data, riskSearch])
+
+  const paginatedRiskReports = useMemo(() => {
+    const start = (riskPage - 1) * PAGE_SIZE
+    return sortedRiskReports.slice(start, start + PAGE_SIZE)
+  }, [sortedRiskReports, riskPage])
+
+  const totalRiskPages = Math.max(1, Math.ceil(sortedRiskReports.length / PAGE_SIZE))
+
+  if (!data) {
+    return <main className="min-h-screen bg-[#f5f7fb] p-8 text-slate-600">{error || 'Loading admin dashboard…'}</main>
   }
 
   return (
     <main className="min-h-screen bg-[#f5f7fb] text-slate-950">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex h-[72px] max-w-[1380px] items-center justify-between px-5 sm:px-8 lg:px-10">
-          <div className="flex items-center gap-10">
-            <a href="#top" className="flex items-center gap-3" aria-label="CampusStay home">
-              <span className="flex size-10 items-center justify-center rounded-xl bg-[#183b61] text-white"><LayoutDashboard aria-hidden="true" /></span>
-              <span className="text-[17px] font-bold tracking-[-0.03em] text-[#183b61]">CampusStay</span>
-            </a>
-            <nav className="hidden items-center gap-7 text-[13px] font-semibold text-slate-400 md:flex" aria-label="Main navigation">
-              <a href="#dashboard" className="text-[#183b61]">Command center</a>
-              <a href="#risk" className="hover:text-[#183b61]">Fine risk</a>
-              <a href="#complaints" className="hover:text-[#183b61]">Complaints</a>
-            </nav>
-          </div>
-          <div className="flex items-center gap-4 sm:gap-6">
-            <button className="relative rounded-lg p-2 text-slate-400 hover:bg-slate-50" aria-label="View notifications"><Bell aria-hidden="true" /><span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-[#16847e] ring-2 ring-white" /></button>
-            <span className="hidden h-7 w-px bg-slate-200 sm:block" />
-            <button className="flex items-center gap-2.5 rounded-lg text-left" aria-label="Open profile menu"><span className="flex size-9 items-center justify-center rounded-full bg-[#dce9f5] text-xs font-bold text-[#183b61]">AN</span><span className="hidden leading-tight sm:block"><span className="block text-[13px] font-semibold text-slate-800">Anita Nair</span><span className="block text-[11px] text-slate-400">Warden · Block A–C</span></span><ChevronDown className="hidden text-slate-400 sm:block" aria-hidden="true" /></button>
-          </div>
+      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white">
+        <div className="mx-auto flex min-h-[72px] max-w-7xl items-center justify-between gap-4 px-5">
+          <a href="#dashboard" className="text-lg font-bold text-[#183b61]">CampusStay Admin</a>
+          <nav className="flex flex-wrap items-center gap-4 text-sm font-semibold text-slate-600" aria-label="Admin navigation">
+            <a href="#complaints">Complaints</a><a href="#risk">Fine risk</a><a href="#records">Records</a>
+            <a href={process.env.NEXT_PUBLIC_MATCHING_URL || 'http://localhost:3001'} className="text-[#16847e]">Roommate matching</a>
+            <button onClick={logout} className="rounded-lg border border-slate-200 px-3 py-2 text-[#183b61]">Sign out</button>
+          </nav>
         </div>
       </header>
 
-      <div id="dashboard" className="mx-auto max-w-[1380px] px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
-        <div className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-          <div><p className="mb-2 text-xs font-bold uppercase tracking-[0.16em] text-[#16847e]">Operations overview</p><h1 className="text-3xl font-bold tracking-[-0.045em] text-[#183b61] sm:text-[38px]">Warden command center</h1><p className="mt-2 text-[15px] text-slate-500">Stay ahead of resident operations, fine risk, and hostel health.</p></div>
-          <span className="flex items-center gap-2 text-xs font-semibold text-slate-400"><span className="size-2 rounded-full bg-emerald-500" />Data refreshed 2 min ago</span>
+      <div id="dashboard" className="mx-auto max-w-7xl space-y-6 px-5 py-8">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#16847e]">Operations overview</p>
+          <h1 className="mt-2 text-3xl font-bold text-[#183b61]">Admin command center</h1>
+          <p className="mt-2 text-sm text-slate-500">Live records from the hostel database and fine-risk service.</p>
         </div>
-
-        <section className="mb-6 flex flex-col justify-between gap-4 rounded-2xl border border-amber-200 bg-[#fffaf0] px-5 py-4 shadow-[0_4px_18px_rgba(111,74,20,0.04)] sm:flex-row sm:items-center" aria-label="Operational alert">
-          <div className="flex items-start gap-3"><span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700"><AlertTriangle aria-hidden="true" /></span><div><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-bold text-amber-950">Spike in Electrical complaints in Block B</p><span className="rounded-full bg-amber-200/70 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">Needs attention</span></div><p className="mt-1 text-xs text-amber-800/70">7 complaints logged in the last 48 hours · SQL view: <span className="font-semibold">vw_complaint_anomalies</span></p></div></div><Button variant="outline" className="border-amber-300 bg-transparent text-xs font-bold text-amber-900 hover:bg-amber-100">Review complaints <ArrowUpRight data-icon="inline-end" /></Button>
+        {error && <p role="alert" className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Hostel summary">
+          <Summary label="Students" value={data.summary.students} />
+          <Summary label="Allocated students / beds" value={`${data.summary.allocated_students} / ${data.summary.beds}`} />
+          <Summary label="Open complaints" value={data.summary.open_complaints} />
+          <Summary label="Fine payments received" value={currency.format(Number(data.summary.paid_amount))} />
         </section>
 
-        <section id="complaints" className="mb-6 grid gap-4 sm:grid-cols-3" aria-label="Summary statistics">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_4px_18px_rgba(31,55,80,0.035)]"><div className="flex items-start justify-between"><div><p className="text-sm font-semibold text-slate-500">Total occupancy</p><p className="mt-2 text-3xl font-bold tracking-[-0.05em] text-[#183b61]">842 <span className="text-base font-semibold text-slate-400">/ 900</span></p><p className="mt-1 text-xs font-semibold text-emerald-600">93.6% occupied</p></div><span className="flex size-10 items-center justify-center rounded-xl bg-[#eef7ff] text-[#2c6597]"><Users aria-hidden="true" /></span></div></div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_4px_18px_rgba(31,55,80,0.035)]"><div className="flex items-start justify-between"><div><p className="text-sm font-semibold text-slate-500">Fine revenue collected</p><p className="mt-2 text-3xl font-bold tracking-[-0.05em] text-[#183b61]">$12,480</p><p className="mt-1 text-xs font-semibold text-emerald-600">+8.4% this month</p></div><span className="flex size-10 items-center justify-center rounded-xl bg-[#e8f7f5] text-[#16847e]"><DollarSign aria-hidden="true" /></span></div></div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_4px_18px_rgba(31,55,80,0.035)]"><div className="flex items-start justify-between"><div><p className="text-sm font-semibold text-slate-500">Pending complaints</p><p className="mt-2 text-3xl font-bold tracking-[-0.05em] text-[#183b61]">24</p><p className="mt-1 text-xs font-semibold text-amber-600">6 high priority</p></div><span className="flex size-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600"><MessageSquare aria-hidden="true" /></span></div></div>
+        {/* Complaints Section */}
+        <section id="complaints" className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-100 p-5">
+            <div>
+              <h2 className="text-xl font-bold text-[#183b61]">
+                Complaints review ({filteredComplaints.length})
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">Filter, inspect, and update complaint status.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <input
+                type="text"
+                placeholder="Search complaints…"
+                value={complaintSearch}
+                onChange={(e) => {
+                  setComplaintSearch(e.target.value)
+                  setComplaintPage(1)
+                }}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm placeholder-slate-400"
+              />
+              <label className="text-sm font-semibold text-slate-700">
+                Status filter
+                <select
+                  value={complaintFilter}
+                  onChange={(event) => {
+                    setComplaintFilter(event.target.value)
+                    setComplaintPage(1)
+                  }}
+                  className="ml-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                >
+                  <option value="">All statuses</option>
+                  {statuses.map((status) => (
+                    <option key={status} value={status}>
+                      {status.replace('_', ' ')}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1000px] text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="p-3">Student / room</th>
+                  <th className="p-3">Complaint</th>
+                  <th className="p-3">Classification</th>
+                  <th className="p-3">Created</th>
+                  <th className="p-3">Status</th>
+                  <th className="p-3">Update</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedComplaints.map((complaint) => (
+                  <tr key={complaint.complaint_id} className="border-t border-slate-100 align-top">
+                    <td className="p-3 font-semibold">
+                      {complaint.full_name}
+                      <p className="mt-1 text-xs font-normal text-slate-500">
+                        {complaint.email} · Block {complaint.block_number}, Room {complaint.room_number}
+                      </p>
+                    </td>
+                    <td className="max-w-sm p-3">{complaint.description}</td>
+                    <td className="p-3">
+                      {complaint.category}
+                      <p className="mt-1 text-xs text-slate-500">
+                        {complaint.priority} · confidence {Number(complaint.confidence).toFixed(2)}
+                      </p>
+                    </td>
+                    <td className="p-3">{new Date(complaint.created_at).toLocaleString()}</td>
+                    <td className="p-3">
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium">
+                        {complaint.status.replace('_', ' ')}
+                      </span>
+                    </td>
+                    <td className="p-3">
+                      <select
+                        aria-label={`Update complaint ${complaint.complaint_id}`}
+                        disabled={busyComplaint === complaint.complaint_id}
+                        value={complaint.status}
+                        onChange={(event) => void updateStatus(complaint.complaint_id, event.target.value)}
+                        className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs"
+                      >
+                        {statuses.map((status) => (
+                          <option key={status} value={status}>
+                            {status.replace('_', ' ')}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!filteredComplaints.length && <p className="p-6 text-sm text-slate-500">No complaints match this filter.</p>}
+          </div>
+          {totalComplaintPages > 1 && (
+            <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3 text-sm text-slate-600">
+              <span>
+                Page {complaintPage} of {totalComplaintPages} ({filteredComplaints.length} complaints)
+              </span>
+              <div className="flex gap-2">
+                <button
+                  disabled={complaintPage <= 1}
+                  onClick={() => setComplaintPage((p) => Math.max(1, p - 1))}
+                  className="rounded border border-slate-300 px-3 py-1 disabled:opacity-40"
+                >
+                  Previous
+                </button>
+                <button
+                  disabled={complaintPage >= totalComplaintPages}
+                  onClick={() => setComplaintPage((p) => Math.min(totalComplaintPages, p + 1))}
+                  className="rounded border border-slate-300 px-3 py-1 disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </section>
 
-        <section id="risk" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_4px_18px_rgba(31,55,80,0.035)]"><div className="flex flex-col justify-between gap-4 border-b border-slate-100 px-6 py-5 sm:flex-row sm:items-center"><div><div className="flex items-center gap-2"><ShieldCheck className="text-[#16847e]" aria-hidden="true" /><h2 className="text-lg font-bold tracking-[-0.03em] text-[#183b61]">Fine-Risk Prediction</h2><span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">Next month</span></div><p className="mt-1 text-xs text-slate-400">Students most likely to carry an unpaid fine balance.</p></div><button className="flex items-center gap-2 self-start rounded-lg px-3 py-2 text-xs font-bold text-slate-500 hover:bg-slate-50" aria-label="More prediction options"><MoreHorizontal aria-hidden="true" /> Options</button></div>
-          <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left"><thead className="bg-slate-50/80"><tr className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400"><th className="px-6 py-3.5">Student name</th><th className="px-4 py-3.5">Block</th><th className="px-4 py-3.5">3M fines count</th><th className="px-4 py-3.5">Unpaid amount</th><th className="px-4 py-3.5">Risk score</th><th className="px-6 py-3.5 text-right">Action</th></tr></thead><tbody className="divide-y divide-slate-100">{students.map((student) => <tr key={student.id} className="text-sm hover:bg-slate-50/60"><td className="px-6 py-4"><div className="flex items-center gap-3"><span className="flex size-9 items-center justify-center rounded-full bg-[#e7eef6] text-xs font-bold text-[#183b61]">{student.name.split(' ').map((part) => part[0]).join('')}</span><div><p className="font-bold text-slate-700">{student.name}</p><p className="mt-0.5 text-[11px] text-slate-400">{student.id}</p></div></div></td><td className="px-4 py-4 font-semibold text-slate-600">{student.block}</td><td className="px-4 py-4 font-semibold text-slate-600">{student.fines}</td><td className="px-4 py-4 font-semibold text-slate-700">{student.unpaid}</td><td className="px-4 py-4"><div className="flex items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ring-inset ${riskStyles[student.risk]}`}>{student.risk}</span><span className="text-xs font-semibold text-slate-400">{student.score}</span></div></td><td className="px-6 py-4 text-right"><Button size="sm" variant={sent.includes(student.name) ? 'secondary' : 'outline'} disabled={sent.includes(student.name)} onClick={() => sendReminder(student.name)} className="text-xs font-bold">{sent.includes(student.name) ? <><CheckCircle2 data-icon="inline-start" /> Sent</> : <><Send data-icon="inline-start" /> Send reminder</>}</Button></td></tr>)}</tbody></table></div><div className="flex items-center justify-between border-t border-slate-100 px-6 py-4"><p className="text-xs font-semibold text-slate-400">Showing 5 of 38 students flagged by model</p><button className="text-xs font-bold text-[#16847e] hover:underline">View full risk report</button></div></section>
+        {/* Fine Risk Report Section */}
+        <section id="risk" className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-100 p-5">
+            <div>
+              <h2 className="text-xl font-bold text-[#183b61]">
+                Complete fine-risk report ({sortedRiskReports.length})
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Every student, prediction probability, risk band, and all six model input features.
+              </p>
+            </div>
+            <input
+              type="text"
+              placeholder="Search by student, email, block, or risk band…"
+              value={riskSearch}
+              onChange={(e) => {
+                setRiskSearch(e.target.value)
+                setRiskPage(1)
+              }}
+              className="w-full max-w-xs rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm placeholder-slate-400"
+            />
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1150px] text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="p-3">Student</th>
+                  <th className="p-3">Risk</th>
+                  <th className="p-3">Probability</th>
+                  <th className="p-3">Fines (3m)</th>
+                  <th className="p-3">Issued (3m)</th>
+                  <th className="p-3">Types</th>
+                  <th className="p-3">Unpaid count</th>
+                  <th className="p-3">Unpaid amount</th>
+                  <th className="p-3">Avg days to pay</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedRiskReports.map((report) => (
+                  <tr key={report.student_id} className="border-t border-slate-100">
+                    <td className="p-3 font-semibold">
+                      {report.full_name}
+                      <p className="text-xs font-normal text-slate-500">
+                        {report.email} · Block {report.block_number} · #{report.student_id}
+                      </p>
+                    </td>
+                    <td className="p-3">
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-bold ${
+                          report.risk_band === 'High'
+                            ? 'bg-rose-100 text-rose-700'
+                            : report.risk_band === 'Medium'
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-emerald-100 text-emerald-700'
+                        }`}
+                      >
+                        {report.risk_band}
+                      </span>
+                    </td>
+                    <td className="p-3">{(report.probability * 100).toFixed(1)}%</td>
+                    <td className="p-3">{report.features.fines_3m}</td>
+                    <td className="p-3">{currency.format(report.features.amount_3m)}</td>
+                    <td className="p-3">{report.features.distinct_types_3m}</td>
+                    <td className="p-3">{report.features.unpaid_count}</td>
+                    <td className="p-3">{currency.format(report.features.unpaid_amount)}</td>
+                    <td className="p-3">{Number(report.features.avg_days_to_pay).toFixed(1)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!sortedRiskReports.length && <p className="p-6 text-sm text-slate-500">No student risk records match.</p>}
+          </div>
+          {totalRiskPages > 1 && (
+            <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3 text-sm text-slate-600">
+              <span>
+                Page {riskPage} of {totalRiskPages} ({sortedRiskReports.length} records)
+              </span>
+              <div className="flex gap-2">
+                <button
+                  disabled={riskPage <= 1}
+                  onClick={() => setRiskPage((p) => Math.max(1, p - 1))}
+                  className="rounded border border-slate-300 px-3 py-1 disabled:opacity-40"
+                >
+                  Previous
+                </button>
+                <button
+                  disabled={riskPage >= totalRiskPages}
+                  onClick={() => setRiskPage((p) => Math.min(totalRiskPages, p + 1))}
+                  className="rounded border border-slate-300 px-3 py-1 disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
 
-        <footer className="mt-6 flex items-center justify-between text-xs text-slate-400"><p className="flex items-center gap-2"><ClipboardList aria-hidden="true" />Model snapshot generated today at 06:00 AM</p><p>CampusStay Admin · v2.4.1</p></footer>
+        {/* Records Section */}
+        <section id="records" className="grid gap-6 xl:grid-cols-3">
+          <RecordTable
+            title="Fine records"
+            headers={['Student', 'Reason', 'Amount', 'Status']}
+            rows={data.records.fines.map((fine) => [
+              fine.full_name,
+              fine.reason,
+              currency.format(Number(fine.amount)),
+              fine.status,
+            ])}
+          />
+          <RecordTable
+            title="Gate logs"
+            headers={['Student', 'Direction', 'Logged at']}
+            rows={data.records.gate_logs.map((log) => [
+              log.full_name,
+              log.direction,
+              new Date(log.logged_at).toLocaleString(),
+            ])}
+          />
+          <RecordTable
+            title="Payment history"
+            headers={['Student', 'Payment', 'Mode', 'Paid at']}
+            rows={data.records.payments.map((payment) => [
+              payment.full_name,
+              `${currency.format(Number(payment.amount))} · ${payment.reason}`,
+              payment.mode,
+              new Date(payment.paid_on).toLocaleString(),
+            ])}
+          />
+        </section>
       </div>
     </main>
+  )
+}
+
+function Summary({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-5">
+      <p className="text-sm text-slate-500">{label}</p>
+      <p className="mt-2 text-2xl font-bold text-[#183b61]">{value}</p>
+    </div>
+  )
+}
+
+function RecordTable({ title, headers, rows }: { title: string; headers: string[]; rows: string[][] }) {
+  const [page, setPage] = useState(1)
+  const pageSize = 10
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize))
+  const paginatedRows = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return rows.slice(start, start + pageSize)
+  }, [rows, page])
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div className="flex items-center justify-between border-b border-slate-100 p-4">
+        <h2 className="font-bold text-[#183b61]">
+          {title} ({rows.length})
+        </h2>
+        {totalPages > 1 && (
+          <div className="flex items-center gap-1 text-xs text-slate-500">
+            <span>
+              {page}/{totalPages}
+            </span>
+            <button
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              className="rounded border border-slate-200 px-1.5 py-0.5 disabled:opacity-40"
+            >
+              ‹
+            </button>
+            <button
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              className="rounded border border-slate-200 px-1.5 py-0.5 disabled:opacity-40"
+            >
+              ›
+            </button>
+          </div>
+        )}
+      </div>
+      <div className="max-h-[440px] overflow-auto">
+        <table className="w-full min-w-[380px] text-left text-xs">
+          <thead className="sticky top-0 bg-slate-50 text-slate-500">
+            <tr>
+              {headers.map((header) => (
+                <th key={header} className="p-2">
+                  {header}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {paginatedRows.map((row, index) => (
+              <tr key={`${title}-${index}`} className="border-t border-slate-100">
+                {row.map((cell, cellIndex) => (
+                  <td key={`${cellIndex}`} className="max-w-52 p-2">
+                    {cell}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {!rows.length && <p className="p-4 text-sm text-slate-500">No records available.</p>}
+      </div>
+    </div>
   )
 }
