@@ -34,7 +34,7 @@ export default function LoginPage() {
         <a href="/" className="text-sm font-bold text-[#183b61]">CampusStay</a>
         <h1 className="mt-6 text-2xl font-bold text-[#183b61]">Sign in</h1>
         <p className="mt-2 text-sm text-slate-500">Sign in to manage hostel operations and roommate allocation.</p>
-        <label className="mt-6 block text-sm font-semibold text-slate-700" htmlFor="identifier">Username</label>
+        <label className="mt-6 block text-sm font-semibold text-slate-700" htmlFor="identifier">Username or email</label>
         <input id="identifier" required autoComplete="username" value={identifier} onChange={(event) => setIdentifier(event.target.value)} className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-gray-900 dark:bg-slate-800 dark:text-white" />
         <label className="mt-4 block text-sm font-semibold text-slate-700" htmlFor="password">Password</label>
         <input id="password" type="password" required autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-gray-900 dark:bg-slate-800 dark:text-white" />

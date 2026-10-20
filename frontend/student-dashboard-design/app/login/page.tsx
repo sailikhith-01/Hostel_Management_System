@@ -39,6 +39,9 @@ export default function LoginPage() {
         <input id="password" type="password" required autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-slate-900 placeholder:text-slate-400" />
         {error && <p role="alert" className="mt-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
         <button disabled={busy} className="mt-6 w-full rounded-lg bg-[#173b62] px-4 py-3 font-bold text-white disabled:opacity-60">{busy ? 'Signing in…' : 'Sign in'}</button>
+        <p className="mt-4 text-center text-sm text-slate-500">
+          New student? <a href="/register" className="font-semibold text-[#173b62] underline">Create an account</a>
+        </p>
       </form>
     </main>
   )

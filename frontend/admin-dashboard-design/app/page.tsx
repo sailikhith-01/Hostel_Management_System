@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { api, ApiError } from '@/lib/api'
 
@@ -49,14 +49,53 @@ type DashboardData = {
     payments: { payment_id: number; student_id: number; full_name: string; amount: number; paid_on: string; mode: string; reason: string }[]
   }
 }
+type ManagedStudent = {
+  student_id: number
+  full_name: string
+  email: string
+  roll_number: string | null
+  gender: string
+  block_number: string
+  room_preference: number | null
+  allocation_id: number | null
+  bed_id: number | null
+  bed_label: string | null
+  room_id: number | null
+  room_number: string | null
+  room_block_number: string | null
+  room_capacity: number | null
+  allocation_status: 'pending' | 'completed'
+}
+type AvailableBed = {
+  bed_id: number
+  bed_label: string
+  room_id: number
+  room_number: string
+  block_number: string
+  capacity: number
+  gender: string
+  occupied_beds: number
+}
+
+function normalizedGender(value: string) {
+  const normalized = value.trim().toUpperCase()
+  if (normalized === 'MALE') return 'M'
+  if (normalized === 'FEMALE') return 'F'
+  return normalized
+}
 
 const currency = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' })
 const statuses = ['pending', 'in_progress', 'resolved', 'rejected']
 const PAGE_SIZE = 10
+const inputClass = 'rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900'
 
 export default function AdminDashboard() {
   const router = useRouter()
   const [data, setData] = useState<DashboardData | null>(null)
+  const [students, setStudents] = useState<ManagedStudent[]>([])
+  const [availableBeds, setAvailableBeds] = useState<AvailableBed[]>([])
+  const [selectedBeds, setSelectedBeds] = useState<Record<number, number>>({})
+  const [hostelType, setHostelType] = useState<'all' | 'mens' | 'ladies' | 'unassigned'>('all')
   const [complaints, setComplaints] = useState<Complaint[]>([])
   const [complaintFilter, setComplaintFilter] = useState('')
   const [complaintSearch, setComplaintSearch] = useState('')
@@ -68,6 +107,8 @@ export default function AdminDashboard() {
   const [authorized, setAuthorized] = useState(false)
   const [error, setError] = useState('')
   const [busyComplaint, setBusyComplaint] = useState<number | null>(null)
+  const [busyAllocation, setBusyAllocation] = useState<number | null>(null)
+  const [allocationNotice, setAllocationNotice] = useState('')
 
   const loadDashboard = useCallback(async () => {
     const [summary, riskResult, records] = await Promise.all([
@@ -82,6 +123,15 @@ export default function AdminDashboard() {
     })
   }, [])
 
+  const loadAllocationLists = useCallback(async () => {
+    const [studentResult, allocationResult] = await Promise.all([
+      api<{ students: ManagedStudent[] }>('/api/students'),
+      api<{ available_beds: AvailableBed[] }>('/api/allocations'),
+    ])
+    setStudents(studentResult.students)
+    setAvailableBeds(allocationResult.available_beds)
+  }, [])
+
   const loadComplaints = useCallback(async (filter: string) => {
     const result = await api<{ complaints: Complaint[] }>(
       `/api/admin/complaints${filter ? `?status=${filter}` : ''}`,
@@ -92,13 +142,14 @@ export default function AdminDashboard() {
   useEffect(() => {
     async function initialize() {
       try {
-        const session = await api<{ user: { role: string } }>('/api/auth/session')
+        const session = await api<{ user: { role: string; hostel_type?: typeof hostelType } }>('/api/auth/session')
         if (session.user.role !== 'admin') {
           router.replace('/login')
           return
         }
+        if (session.user.hostel_type) setHostelType(session.user.hostel_type)
         setAuthorized(true)
-        await loadDashboard()
+        await Promise.all([loadDashboard(), loadAllocationLists()])
       } catch (reason) {
         if (reason instanceof ApiError && (reason.status === 401 || reason.status === 403)) {
           router.replace('/login')
@@ -108,7 +159,7 @@ export default function AdminDashboard() {
       }
     }
     void initialize()
-  }, [loadDashboard, router])
+  }, [loadAllocationLists, loadDashboard, router])
 
   useEffect(() => {
     if (!authorized) return
@@ -134,6 +185,31 @@ export default function AdminDashboard() {
       setError(reason instanceof Error ? reason.message : 'Could not update complaint status')
     } finally {
       setBusyComplaint(null)
+    }
+  }
+
+  async function allocateBed(student: ManagedStudent) {
+    const bedId = selectedBeds[student.student_id]
+    if (!bedId) return
+    setBusyAllocation(student.student_id)
+    setAllocationNotice('')
+    setError('')
+    try {
+      await api('/api/allocations', {
+        method: 'POST',
+        body: JSON.stringify({ student_id: student.student_id, bed_id: bedId }),
+      })
+      await Promise.all([loadAllocationLists(), loadDashboard()])
+      setSelectedBeds((current) => {
+        const next = { ...current }
+        delete next[student.student_id]
+        return next
+      })
+      setAllocationNotice(`A bed was allocated to ${student.full_name}.`)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not allocate the bed')
+    } finally {
+      setBusyAllocation(null)
     }
   }
 
@@ -200,7 +276,7 @@ export default function AdminDashboard() {
         <div className="mx-auto flex min-h-[72px] max-w-7xl items-center justify-between gap-4 px-5">
           <a href="#dashboard" className="text-lg font-bold text-[#183b61]">CampusStay Admin</a>
           <nav className="flex flex-wrap items-center gap-4 text-sm font-semibold text-slate-600" aria-label="Admin navigation">
-            <a href="#complaints">Complaints</a><a href="#risk">Fine risk</a><a href="#records">Records</a>
+            <a href="#complaints">Complaints</a><a href="#risk">Fine risk</a><a href="#records">Records</a><a href="/users">User Management</a>
             <a href={process.env.NEXT_PUBLIC_MATCHING_URL || 'http://localhost:3001'} className="text-[#16847e]">Roommate matching</a>
             <button onClick={logout} className="rounded-lg border border-slate-200 px-3 py-2 text-[#183b61]">Sign out</button>
           </nav>
@@ -214,11 +290,88 @@ export default function AdminDashboard() {
           <p className="mt-2 text-sm text-slate-500">Live records from the hostel database and fine-risk service.</p>
         </div>
         {error && <p role="alert" className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
+        {allocationNotice && <p role="status" className="rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{allocationNotice}</p>}
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Hostel summary">
           <Summary label="Students" value={data.summary.students} />
           <Summary label="Allocated students / beds" value={`${data.summary.allocated_students} / ${data.summary.beds}`} />
           <Summary label="Open complaints" value={data.summary.open_complaints} />
           <Summary label="Fine payments received" value={currency.format(Number(data.summary.paid_amount))} />
+        </section>
+        <section id="users" className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5">
+          <div>
+            <h2 className="text-xl font-bold text-[#183b61]">User Management</h2>
+            <p className="mt-1 text-sm text-slate-500">Register students and provision admin accounts.</p>
+          </div>
+          <a href="/users" className="rounded-lg bg-[#183b61] px-4 py-2.5 text-sm font-bold text-white">Manage users</a>
+        </section>
+
+        <section id="allocations" className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#16847e]">Student housing</p>
+            <h2 className="mt-1 text-xl font-bold text-[#183b61]">Bed allocations</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              {hostelType === 'mens' ? "Men's hostel" : hostelType === 'ladies' ? "Ladies' hostel" : 'All hostels'} · Room gender, block, bed inventory, and roommate compatibility are checked before saving.
+            </p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Summary label="Allocation completed" value={students.filter((student) => student.allocation_status === 'completed').length} />
+            <Summary label="Allocation pending" value={students.filter((student) => student.allocation_status === 'pending').length} />
+          </div>
+          <AllocationTable
+            title="Unallocated / Pending Students"
+            students={students.filter((student) => student.allocation_status === 'pending')}
+            renderStudent={(student) => {
+                const eligibleBeds = availableBeds.filter((bed) =>
+                  normalizedGender(bed.gender) === normalizedGender(student.gender) &&
+                  bed.block_number.trim().toUpperCase() === student.block_number.trim().toUpperCase() &&
+                  bed.capacity === student.room_preference)
+                return (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      aria-label={`Available bed for ${student.full_name}`}
+                      value={selectedBeds[student.student_id] || ''}
+                      onChange={(event) => setSelectedBeds((current) => ({
+                        ...current,
+                        [student.student_id]: Number(event.target.value),
+                      }))}
+                      className={inputClass}
+                    >
+                      <option value="">Choose a bed</option>
+                      {eligibleBeds.map((bed) => (
+                        <option key={bed.bed_id} value={bed.bed_id}>
+                          Block {bed.block_number} · Room {bed.room_number} · Bed {bed.bed_label} ({bed.occupied_beds}/{bed.capacity})
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      disabled={!selectedBeds[student.student_id] || busyAllocation === student.student_id}
+                      onClick={() => void allocateBed(student)}
+                      className="rounded-lg bg-[#183b61] px-3 py-2 text-sm font-bold text-white disabled:opacity-50"
+                    >
+                      {busyAllocation === student.student_id ? 'Allocating…' : 'Allocate'}
+                    </button>
+                    {!eligibleBeds.length && <span className="text-xs text-slate-500">No available beds match this student&apos;s block, gender, and preferred capacity.</span>}
+                  </div>
+                )
+            }}
+          />
+          <details className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <summary className="cursor-pointer list-none px-4 py-3 font-bold text-[#183b61]">
+              View Allocated Students ({students.filter((student) => student.allocation_status === 'completed').length})
+            </summary>
+            <div className="border-t border-slate-100 p-4">
+              <AllocationTable
+                title="Allocated Students"
+                students={students.filter((student) => student.allocation_status === 'completed')}
+                renderStudent={(student) => (
+                  <p className="text-sm text-slate-600">
+                    Block {student.room_block_number}, Room {student.room_number} · Bed {student.bed_label} · {student.room_capacity}-bed
+                  </p>
+                )}
+              />
+            </div>
+          </details>
         </section>
 
         {/* Complaints Section */}
@@ -480,6 +633,37 @@ function Summary({ label, value }: { label: string; value: number | string }) {
     <div className="rounded-xl border border-slate-200 bg-white p-5">
       <p className="text-sm text-slate-500">{label}</p>
       <p className="mt-2 text-2xl font-bold text-[#183b61]">{value}</p>
+    </div>
+  )
+}
+
+function AllocationTable({
+  title,
+  students,
+  renderStudent,
+}: {
+  title: string
+  students: ManagedStudent[]
+  renderStudent: (student: ManagedStudent) => ReactNode
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-slate-200">
+      <h3 className="border-b border-slate-100 px-4 py-3 font-bold text-[#183b61]">{title} ({students.length})</h3>
+      <ul className="max-h-[400px] divide-y divide-slate-100 overflow-auto">
+        {students.map((student) => (
+          <li key={student.student_id} className="flex flex-wrap items-center justify-between gap-3 p-4">
+            <div>
+              <p className="font-semibold text-slate-900">{student.full_name}</p>
+              <p className="mt-1 text-xs text-slate-500">{student.email} · {student.roll_number || 'No roll number'} · Block {student.block_number}</p>
+              {student.allocation_status === 'pending' && (
+                <p className="mt-1 text-xs text-slate-500">Preferred room capacity: {student.room_preference ?? 'Not set'}</p>
+              )}
+            </div>
+            {renderStudent(student)}
+          </li>
+        ))}
+      </ul>
+      {!students.length && <p className="p-4 text-sm text-slate-500">No students in this list.</p>}
     </div>
   )
 }

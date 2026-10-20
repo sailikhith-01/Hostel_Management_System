@@ -29,11 +29,18 @@ DROP TABLE IF EXISTS Admin CASCADE;
 CREATE TABLE Admin (
     admin_id SERIAL PRIMARY KEY,
     username VARCHAR(50) UNIQUE NOT NULL,
+    email VARCHAR(100),
     password_hash VARCHAR(255) NOT NULL,
     full_name VARCHAR(100) NOT NULL,
     role VARCHAR(20) NOT NULL DEFAULT 'WARDEN' CHECK (role IN ('WARDEN', 'SUPER_ADMIN')),
+    hostel_type VARCHAR(12) NOT NULL DEFAULT 'unassigned',
+    CONSTRAINT check_admin_hostel_type CHECK (
+            (role = 'SUPER_ADMIN' AND hostel_type = 'all') OR
+            (role = 'WARDEN' AND hostel_type IN ('mens', 'ladies', 'unassigned'))
+        ),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE UNIQUE INDEX idx_admin_email_unique ON Admin (lower(email)) WHERE email IS NOT NULL;
 
 -- ----------------------------------------------------------------------------
 -- 2. STUDENT TABLE (First-Year Students Only)
@@ -44,6 +51,8 @@ CREATE TABLE Student (
     email VARCHAR(100) UNIQUE NOT NULL,
     gender CHAR(1) NOT NULL CHECK (gender IN ('M', 'F')),
     password_hash VARCHAR(255),
+    roll_number VARCHAR(50),
+    room_preference INT,
     -- Blocks: Men's (A-T), Ladies' (A-I, S)
     block_number VARCHAR(2) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -51,8 +60,10 @@ CREATE TABLE Student (
     CONSTRAINT check_valid_block CHECK (
         (gender = 'M' AND block_number BETWEEN 'A' AND 'T') OR
         (gender = 'F' AND (block_number BETWEEN 'A' AND 'I' OR block_number = 'S'))
-    )
+    ),
+    CONSTRAINT check_student_room_preference CHECK (room_preference IN (1, 2, 3, 4, 6, 8))
 );
+CREATE UNIQUE INDEX idx_student_roll_number_unique ON Student (roll_number) WHERE roll_number IS NOT NULL;
 
 -- ----------------------------------------------------------------------------
 -- 3. ROOMMATE PREFERENCE QUESTIONNAIRE (10 Behavioral Questions)

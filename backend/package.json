@@ -6,6 +6,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "hash-password": "node hash-password.js",
+    "reset-passwords": "node reset-passwords.js",
     "test": "node --test"
   },
   "dependencies": {

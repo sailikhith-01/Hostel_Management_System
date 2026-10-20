@@ -3,6 +3,7 @@ const cors = require('cors');
 const axios = require('axios');
 const crypto = require('crypto');
 const db = require('./db');
+const { verifyPassword } = require('./password');
 const {
   COMPATIBILITY_THRESHOLD,
   preferenceCompatibility,
@@ -23,6 +24,18 @@ const ML_REQUEST_TIMEOUT_MS = Number(process.env.ML_REQUEST_TIMEOUT_MS || 5000);
 const SESSION_SECRET = process.env.SESSION_SECRET;
 const SESSION_COOKIE = 'hostel_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 8;
+const DEFAULT_ROOMMATE_PREFERENCES = {
+  q1_bedtime: 2,
+  q2_wakeup: 2,
+  q3_tidiness: 3,
+  q4_study_style: 'library',
+  q5_study_hours: 2,
+  q6_food: 'veg',
+  q7_noise_tolerance: 3,
+  q8_visitors_social: 3,
+  q9_weekends: 'hostel',
+  q10_share_belongings: 3,
+};
 
 function signSession(payload) {
   const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
@@ -46,6 +59,11 @@ function verifySession(value) {
     const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
     if (!Number.isInteger(payload.id) || !['admin', 'student'].includes(payload.role) ||
         !Number.isInteger(payload.exp) || payload.exp <= Math.floor(Date.now() / 1000)) return null;
+    if (payload.role === 'admin' && (
+      !['WARDEN', 'SUPER_ADMIN'].includes(payload.admin_role) ||
+      !['all', 'mens', 'ladies', 'unassigned'].includes(payload.hostel_type) ||
+      (payload.admin_role === 'SUPER_ADMIN' && payload.hostel_type !== 'all')
+    )) return null;
     return payload;
   } catch {
     return null;
@@ -67,8 +85,22 @@ function readCookie(req, name) {
 function authenticate(req, res, next) {
   const session = verifySession(readCookie(req, SESSION_COOKIE));
   if (!session) return res.status(401).json({ error: 'Please sign in to continue' });
-  req.session = session;
-  next();
+  if (session.role !== 'admin') {
+    req.session = session;
+    return next();
+  }
+  db.query(
+    'SELECT role AS admin_role, hostel_type FROM Admin WHERE admin_id = $1',
+    [session.id],
+  ).then((result) => {
+    const admin = result.rows[0];
+    if (!admin || admin.admin_role !== session.admin_role ||
+        admin.hostel_type !== session.hostel_type) {
+      return res.status(401).json({ error: 'Admin access changed; please sign in again' });
+    }
+    req.session = session;
+    next();
+  }).catch(next);
 }
 
 function allowRoles(...roles) {
@@ -80,49 +112,39 @@ function allowRoles(...roles) {
   };
 }
 
-function hashPassword(password) {
-  const salt = crypto.randomBytes(16);
-  const key = crypto.scryptSync(password, salt, 64);
-  return `scrypt$${salt.toString('base64url')}$${key.toString('base64url')}`;
+function requireSuperAdmin(req, res, next) {
+  if (req.session?.role !== 'admin' || req.session.admin_role !== 'SUPER_ADMIN') {
+    return res.status(403).json({ error: 'Only the main administrator can manage admin accounts' });
+  }
+  next();
 }
 
-function verifyScrypt(password, storedHash) {
-  const [algorithm, salt, expectedValue] = storedHash.split('$');
-  if (algorithm !== 'scrypt' || !salt || !expectedValue) return false;
-  try {
-    const expected = Buffer.from(expectedValue, 'base64url');
-    const saltBuffer = Buffer.from(salt, 'base64url');
-    if (expected.length !== 64 || saltBuffer.length < 16) return false;
-    const actual = crypto.scryptSync(password, saltBuffer, 64);
-    return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
-  } catch {
-    return false;
-  }
+function adminGenderScope(session) {
+  if (session.hostel_type === 'mens') return 'M';
+  if (session.hostel_type === 'ladies') return 'F';
+  if (session.hostel_type === 'all') return null;
+  return 'X';
 }
 
-function verifyPassword(password, storedHash) {
-  if (typeof password !== 'string' || typeof storedHash !== 'string') return false;
-  // Clean fallback plain-text matching for testing/dev environments
-  if (password === storedHash) return true;
-
-  if (verifyScrypt(password, storedHash)) {
-    return true;
+function validateAdminStudentScope(req, student) {
+  const genderScope = adminGenderScope(req.session);
+  if (genderScope && genderScope !== student.gender) {
+    throw requestError('You can only manage students assigned to your hostel', 403);
   }
-
-  // Seamless cross-compatibility for admin credentials ('admin123' and 'AdminSecure123!')
-  if (
-    (password === 'admin123' && verifyScrypt('AdminSecure123!', storedHash)) ||
-    (password === 'AdminSecure123!' && verifyScrypt('admin123', storedHash))
-  ) {
-    return true;
-  }
-
-  return false;
 }
 
 function issueSession(res, role, user) {
   const expiresAt = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS;
-  const token = signSession({ id: user.id, role, name: user.name, exp: expiresAt });
+  const token = signSession({
+    id: user.id,
+    role,
+    name: user.name,
+    ...(role === 'admin' ? {
+      admin_role: user.admin_role,
+      hostel_type: user.hostel_type,
+    } : {}),
+    exp: expiresAt,
+  });
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
   res.setHeader('Set-Cookie',
     `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_SECONDS}${secure}`);
@@ -161,6 +183,133 @@ function matchingConflict(message) {
   return error;
 }
 
+function requestError(message, statusCode = 400) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
+function requiredText(value, field, maximumLength) {
+  if (typeof value !== 'string' || !value.trim() || value.trim().length > maximumLength) {
+    throw requestError(`${field} is required and must be no more than ${maximumLength} characters`);
+  }
+  return value.trim();
+}
+
+function accountPassword(value) {
+  if (typeof value !== 'string' || value.trim().length < 8 || value.length > 255) {
+    throw requestError('Password must be between 8 and 255 characters');
+  }
+  return value;
+}
+
+function validEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function studentAccount(body) {
+  const name = requiredText(body.full_name || body.name, 'Name', 100);
+  const email = requiredText(body.email, 'Email', 100).toLowerCase();
+  if (!validEmail(email)) throw requestError('Provide a valid email address');
+
+  const genderValue = requiredText(body.gender, 'Gender', 10).toUpperCase();
+  const gender = genderValue === 'MALE' ? 'M' : genderValue === 'FEMALE' ? 'F' : genderValue;
+  if (!['M', 'F'].includes(gender)) throw requestError('Gender must be M or F');
+
+  const blockNumber = requiredText(body.block_number, 'Block number', 1).toUpperCase();
+  const allowedBlock = gender === 'M'
+    ? /^[A-T]$/.test(blockNumber)
+    : /^(?:[A-I]|S)$/.test(blockNumber);
+  if (!allowedBlock) throw requestError('Block number is not valid for the selected gender');
+
+  const rollNumber = requiredText(body.roll_number, 'Roll number', 50);
+  const roomPreference = body.room_preference;
+  if (!Number.isInteger(roomPreference) || ![1, 2, 3, 4, 6, 8].includes(roomPreference)) {
+    throw requestError('Room preference must be a supported room capacity');
+  }
+
+  return {
+    name,
+    email,
+    gender,
+    blockNumber,
+    rollNumber,
+    roomPreference,
+    password: accountPassword(body.password),
+  };
+}
+
+async function insertStudent(body) {
+  const student = studentAccount(body);
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query(
+      `INSERT INTO Student
+        (full_name, email, gender, block_number, roll_number, room_preference, password_hash)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING student_id AS id, full_name AS name, email`,
+      [
+        student.name,
+        student.email,
+        student.gender,
+        student.blockNumber,
+        student.rollNumber,
+        student.roomPreference,
+        student.password,
+      ],
+    );
+    const createdStudent = result.rows[0];
+    await client.query(
+      `INSERT INTO RoommatePreference (
+         student_id, q1_bedtime, q2_wakeup, q3_tidiness, q4_study_style,
+         q5_study_hours, q6_food, q7_noise_tolerance, q8_visitors_social,
+         q9_weekends, q10_share_belongings
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [createdStudent.id, ...preferenceValues(DEFAULT_ROOMMATE_PREFERENCES)],
+    );
+    await client.query('COMMIT');
+    return createdStudent;
+  } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackError) {
+      console.error('Student creation rollback failed:', rollbackError.message);
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+function adminAccount(body) {
+  const username = requiredText(body.username, 'Username', 50);
+  const email = requiredText(body.email, 'Email', 100).toLowerCase();
+  if (!validEmail(email)) throw requestError('Provide a valid email address');
+  const name = requiredText(body.full_name || body.name, 'Name', 100);
+  const role = requiredText(body.role, 'Role', 20).toUpperCase();
+  if (!['WARDEN', 'SUPER_ADMIN'].includes(role)) {
+    throw requestError('Role must be WARDEN or SUPER_ADMIN');
+  }
+  const hostelType = requiredText(body.hostel_type, 'Hostel assignment', 12).toLowerCase();
+  if ((role === 'SUPER_ADMIN' && hostelType !== 'all') ||
+      (role === 'WARDEN' && !['mens', 'ladies'].includes(hostelType))) {
+    throw requestError('Super admins must have full access; sub-admins must be assigned to mens or ladies');
+  }
+  return { username, email, name, role, hostelType, password: accountPassword(body.password) };
+}
+
+async function insertAdmin(body) {
+  const admin = adminAccount(body);
+  const result = await db.query(
+    `INSERT INTO Admin (username, email, password_hash, full_name, role, hostel_type)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING admin_id AS id, username, email, full_name AS name, role, hostel_type`,
+    [admin.username, admin.email, admin.password, admin.name, admin.role, admin.hostelType],
+  );
+  return result.rows[0];
+}
+
 app.get('/health', async (req, res) => {
   try {
     const [, mlResponse] = await Promise.all([
@@ -186,7 +335,12 @@ app.post('/api/auth/login', asyncRoute(async (req, res) => {
   }
   const result = role === 'admin'
     ? await db.query(
-      'SELECT admin_id AS id, username AS email, full_name AS name, password_hash FROM Admin WHERE username = $1',
+      `SELECT admin_id AS id, COALESCE(email, username) AS email, full_name AS name,
+              password_hash, role AS admin_role, hostel_type
+       FROM Admin
+       WHERE username = $1 OR lower(email) = lower($1)
+       ORDER BY (username = $1) DESC
+       LIMIT 1`,
       [identifier.trim()],
     )
     : await db.query(
@@ -200,20 +354,317 @@ app.post('/api/auth/login', asyncRoute(async (req, res) => {
 
   issueSession(res, role, user);
   res.json({
-    user: { id: user.id, role, name: user.name, email: user.email },
+    user: {
+      id: user.id,
+      role,
+      name: user.name,
+      email: user.email,
+      ...(role === 'admin'
+        ? { admin_role: user.admin_role, hostel_type: user.hostel_type }
+        : {}),
+    },
     expires_in: SESSION_TTL_SECONDS,
   });
 }));
 
+app.post('/api/auth/register', asyncRoute(async (req, res) => {
+  const user = await insertStudent(req.body || {});
+  issueSession(res, 'student', user);
+  res.status(201).json({
+    user: { id: user.id, role: 'student', name: user.name, email: user.email },
+    expires_in: SESSION_TTL_SECONDS,
+  });
+}));
+
+app.post('/api/students', authenticate, allowRoles('admin'), asyncRoute(async (req, res) => {
+  const body = req.body || {};
+  validateAdminStudentScope(req, studentAccount(body));
+  const student = await insertStudent(body);
+  res.status(201).json({ student });
+}));
+
+app.get('/api/students', authenticate, allowRoles('admin'), asyncRoute(async (req, res) => {
+  const result = await db.query(
+    `SELECT s.student_id, s.full_name, s.email, s.roll_number, s.gender,
+            s.block_number, s.room_preference,
+            a.allocation_id, a.allocated_at, b.bed_id, b.bed_label,
+            r.room_id, r.room_number, r.block_number AS room_block_number,
+            r.capacity AS room_capacity,
+            CASE WHEN a.allocation_id IS NULL THEN 'pending' ELSE 'completed' END AS allocation_status
+     FROM Student s
+     LEFT JOIN Allocation a ON a.student_id = s.student_id
+     LEFT JOIN Bed b ON b.bed_id = a.bed_id
+     LEFT JOIN Room r ON r.room_id = b.room_id
+     WHERE ($1::char IS NULL OR s.gender = $1)
+     ORDER BY s.full_name, s.student_id`,
+    [adminGenderScope(req.session)],
+  );
+  res.json({ students: result.rows });
+}));
+
+app.get('/api/allocations', authenticate, allowRoles('admin'), asyncRoute(async (req, res) => {
+  const studentId = req.query.student_id === undefined ? null : Number(req.query.student_id);
+  if (studentId !== null && (!Number.isInteger(studentId) || studentId < 1)) {
+    return res.status(400).json({ error: 'student_id must be a positive integer' });
+  }
+  const genderScope = adminGenderScope(req.session);
+  const result = await db.query(
+    `SELECT b.bed_id, b.bed_label, r.room_id, r.room_number, r.block_number,
+            r.capacity, r.gender,
+            (SELECT COUNT(*)::int
+             FROM Bed occupant_bed
+             WHERE occupant_bed.room_id = r.room_id
+               AND (occupant_bed.is_occupied OR EXISTS (
+                 SELECT 1 FROM Allocation occupant_allocation
+                 WHERE occupant_allocation.bed_id = occupant_bed.bed_id
+               ))) AS occupied_beds
+     FROM Bed b
+     JOIN Room r ON r.room_id = b.room_id
+     WHERE b.is_occupied = FALSE
+       AND NOT EXISTS (SELECT 1 FROM Allocation a WHERE a.bed_id = b.bed_id)
+       AND ($1::int IS NULL OR EXISTS (
+         SELECT 1 FROM Student s
+         WHERE s.student_id = $1
+           AND s.gender = r.gender
+           AND upper(btrim(s.block_number)) = upper(btrim(r.block_number))
+           AND s.room_preference = r.capacity
+       ))
+       AND ($2::char IS NULL OR r.gender = $2)
+       AND (SELECT COUNT(*) FROM Bed room_bed WHERE room_bed.room_id = r.room_id) = r.capacity
+       AND NOT EXISTS (
+         SELECT 1 FROM MatchGroup mg
+         WHERE mg.room_id = r.room_id AND mg.status = 'pending'
+       )
+       AND (SELECT COUNT(*)
+            FROM Bed occupied_bed
+            WHERE occupied_bed.room_id = r.room_id
+              AND (occupied_bed.is_occupied OR EXISTS (
+                SELECT 1 FROM Allocation occupant_allocation
+                WHERE occupant_allocation.bed_id = occupied_bed.bed_id
+              ))) < r.capacity
+     ORDER BY r.gender, r.block_number, r.room_number, b.bed_label`,
+    [studentId, genderScope],
+  );
+  if (studentId !== null) {
+    const studentExists = await db.query(
+      `SELECT 1 FROM Student s
+       WHERE s.student_id = $1
+         AND ($2::char IS NULL OR s.gender = $2)`,
+      [studentId, genderScope],
+    );
+    if (!studentExists.rows.length) {
+      return res.status(404).json({ error: 'Student does not exist' });
+    }
+  }
+  res.json({ available_beds: result.rows });
+}));
+
+app.post('/api/allocations', authenticate, allowRoles('admin'), asyncRoute(async (req, res) => {
+  const studentId = Number(req.body?.student_id);
+  const bedId = Number(req.body?.bed_id);
+  if (!Number.isInteger(studentId) || studentId < 1 ||
+      !Number.isInteger(bedId) || bedId < 1) {
+    return res.status(400).json({ error: 'Provide valid student_id and bed_id values' });
+  }
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const bedCheck = await client.query(
+      `SELECT b.is_occupied, r.room_id, r.capacity, r.block_number AS room_block_number,
+              s.student_id, s.gender AS student_gender, s.block_number AS student_block_number,
+              s.room_preference AS student_room_preference, r.gender AS room_gender
+       FROM Bed b
+       JOIN Room r ON r.room_id = b.room_id
+       JOIN Student s ON s.student_id = $2
+       WHERE b.bed_id = $1
+       FOR UPDATE OF r, b, s`,
+      [bedId, studentId],
+    );
+    if (!bedCheck.rows[0]) {
+      const exists = await client.query(
+        `SELECT EXISTS (SELECT 1 FROM Student WHERE student_id = $1) AS student_exists,
+                EXISTS (SELECT 1 FROM Bed WHERE bed_id = $2) AS bed_exists`,
+        [studentId, bedId],
+      );
+      await client.query('ROLLBACK');
+      if (!exists.rows[0].student_exists) {
+        return res.status(404).json({ error: 'Student does not exist' });
+      }
+      return res.status(404).json({ error: 'Bed does not exist' });
+    }
+
+    const bed = bedCheck.rows[0];
+    const genderScope = adminGenderScope(req.session);
+    if (genderScope && genderScope !== bed.student_gender) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'You can only allocate beds to students assigned to your hostel' });
+    }
+    const alreadyAllocated = await client.query(
+      'SELECT 1 FROM Allocation WHERE student_id = $1',
+      [studentId],
+    );
+    if (alreadyAllocated.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Student already has an allocation' });
+    }
+    if (bed.student_gender !== bed.room_gender) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Student gender does not match room gender' });
+    }
+    if (bed.student_block_number !== bed.room_block_number) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Student block does not match the room block' });
+    }
+    if (bed.student_room_preference !== bed.capacity) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Room capacity does not match the student preference' });
+    }
+    const pendingMatch = await client.query(
+      `SELECT EXISTS (
+         SELECT 1 FROM MatchGroup mg
+         WHERE mg.status = 'pending'
+           AND (mg.room_id = $1 OR EXISTS (
+             SELECT 1 FROM MatchGroupMember member
+             WHERE member.group_id = mg.group_id AND member.student_id = $2
+           ))
+       ) AS has_pending_match`,
+      [bed.room_id, studentId],
+    );
+    if (pendingMatch.rows[0].has_pending_match) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This student or room is part of a pending matching review' });
+    }
+    if (bed.is_occupied) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Bed is already occupied' });
+    }
+
+    const roomInventory = await client.query(
+      `SELECT COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE b.is_occupied OR EXISTS (
+                SELECT 1 FROM Allocation a WHERE a.bed_id = b.bed_id
+              ))::int AS occupied
+       FROM Bed b WHERE b.room_id = $1`,
+      [bed.room_id],
+    );
+    if (roomInventory.rows[0].total !== bed.capacity ||
+        roomInventory.rows[0].occupied >= bed.capacity) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Room bed inventory is incomplete or full' });
+    }
+
+    const residents = await client.query(
+      `SELECT s.student_id, rp.q1_bedtime, rp.q2_wakeup, rp.q3_tidiness,
+              rp.q4_study_style, rp.q5_study_hours, rp.q6_food,
+              rp.q7_noise_tolerance, rp.q8_visitors_social, rp.q9_weekends,
+              rp.q10_share_belongings
+       FROM Student s
+       LEFT JOIN RoommatePreference rp ON rp.student_id = s.student_id
+       WHERE s.student_id = $1
+          OR EXISTS (
+            SELECT 1 FROM Allocation a
+            JOIN Bed occupied_bed ON occupied_bed.bed_id = a.bed_id
+            WHERE a.student_id = s.student_id AND occupied_bed.room_id = $2
+          )
+       ORDER BY s.student_id
+       FOR UPDATE OF s`,
+      [studentId, bed.room_id],
+    );
+    if (residents.rows.some((resident) => resident.q1_bedtime === null)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Every room resident must have roommate preferences before allocation' });
+    }
+    const candidatePreferences = residents.rows.find((resident) => resident.student_id === studentId);
+    const incompatible = residents.rows
+      .filter((resident) => resident.student_id !== studentId)
+      .some((resident) =>
+        preferenceCompatibility(candidatePreferences, resident) < COMPATIBILITY_THRESHOLD);
+    if (incompatible) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Student preferences are not compatible with the room residents' });
+    }
+
+    const allocation = await client.query(
+      `INSERT INTO Allocation (student_id, bed_id)
+       VALUES ($1, $2)
+       RETURNING allocation_id, student_id, bed_id, allocated_at`,
+      [studentId, bedId],
+    );
+    await client.query('UPDATE Bed SET is_occupied = TRUE WHERE bed_id = $1', [bedId]);
+    await client.query('COMMIT');
+    res.status(201).json({ allocation: allocation.rows[0] });
+  } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackError) {
+      console.error('Admin allocation rollback failed:', rollbackError.message);
+    }
+    const status = error.statusCode || (error.code === '23505' ? 409 : 500);
+    console.error('Could not create admin allocation:', error.message);
+    res.status(status).json({
+      error: error.statusCode
+        ? error.message
+        : status === 409
+        ? 'Student or bed already has an allocation'
+        : 'Could not create the allocation',
+    });
+  } finally {
+    client.release();
+  }
+}));
+
+app.post('/api/admins', authenticate, allowRoles('admin'), requireSuperAdmin, asyncRoute(async (req, res) => {
+  const admin = await insertAdmin(req.body || {});
+  res.status(201).json({ admin });
+}));
+
+app.get('/api/admins', authenticate, allowRoles('admin'), requireSuperAdmin, asyncRoute(async (req, res) => {
+  const result = await db.query(
+    `SELECT admin_id, username, email, full_name, role, hostel_type
+     FROM Admin
+     ORDER BY CASE WHEN role = 'SUPER_ADMIN' THEN 0 ELSE 1 END, full_name`,
+  );
+  res.json({ admins: result.rows });
+}));
+
+app.patch('/api/admins/:adminId/hostel-type', authenticate, allowRoles('admin'), requireSuperAdmin, asyncRoute(async (req, res) => {
+  const adminId = Number(req.params.adminId);
+  const hostelType = typeof req.body?.hostel_type === 'string'
+    ? req.body.hostel_type.toLowerCase()
+    : '';
+  if (!Number.isInteger(adminId) || adminId < 1 ||
+      !['mens', 'ladies', 'unassigned'].includes(hostelType)) {
+    return res.status(400).json({ error: 'Provide a valid admin ID and hostel assignment' });
+  }
+  const result = await db.query(
+    `UPDATE Admin
+     SET hostel_type = $1
+     WHERE admin_id = $2 AND role = 'WARDEN'
+     RETURNING admin_id, username, email, full_name, role, hostel_type`,
+    [hostelType, adminId],
+  );
+  if (!result.rows[0]) return res.status(404).json({ error: 'Sub-admin does not exist' });
+  res.json({ admin: result.rows[0] });
+}));
+
 app.get('/api/auth/session', authenticate, asyncRoute(async (req, res) => {
   const result = req.session.role === 'admin'
-    ? await db.query('SELECT admin_id AS id, username AS email, full_name AS name FROM Admin WHERE admin_id = $1', [req.session.id])
+    ? await db.query('SELECT admin_id AS id, COALESCE(email, username) AS email, full_name AS name FROM Admin WHERE admin_id = $1', [req.session.id])
     : await db.query('SELECT student_id AS id, email, full_name AS name FROM Student WHERE student_id = $1', [req.session.id]);
   if (!result.rows[0]) {
     res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`);
     return res.status(401).json({ error: 'Account no longer exists; please sign in again' });
   }
-  res.json({ user: { ...result.rows[0], role: req.session.role } });
+  res.json({
+    user: {
+      ...result.rows[0],
+      role: req.session.role,
+      ...(req.session.role === 'admin'
+        ? { admin_role: req.session.admin_role, hostel_type: req.session.hostel_type }
+        : {}),
+    },
+  });
 }));
 
 app.post('/api/auth/logout', (req, res) => {
@@ -358,10 +809,14 @@ app.get('/api/admin/complaints', authenticate, allowRoles('admin'), asyncRoute(a
   const limit = isAll ? null : Math.min(Math.max(Number(limitParam || 50), 1), 200);
   const page = Math.max(Number(req.query.page || 1), 1);
   const offset = isAll ? 0 : (page - 1) * limit;
+  const genderScope = adminGenderScope(req.session);
 
   const countResult = await db.query(
-    'SELECT COUNT(*)::int AS total FROM Complaint c WHERE ($1 = \'\' OR c.status = $1)',
-    [status],
+    `SELECT COUNT(*)::int AS total
+     FROM Complaint c JOIN Student s ON s.student_id = c.student_id
+     WHERE ($1 = '' OR c.status = $1)
+       AND ($2::char IS NULL OR s.gender = $2)`,
+    [status, genderScope],
   );
   const total = countResult.rows[0]?.total || 0;
   const totalPages = isAll ? 1 : Math.ceil(total / limit) || 1;
@@ -374,9 +829,10 @@ app.get('/api/admin/complaints', authenticate, allowRoles('admin'), asyncRoute(a
          FROM Complaint c
          JOIN Student s ON s.student_id = c.student_id
          WHERE ($1 = '' OR c.status = $1)
+           AND ($2::char IS NULL OR s.gender = $2)
          ORDER BY CASE c.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
                   c.created_at DESC`,
-        [status],
+        [status, genderScope],
       )
     : await db.query(
         `SELECT c.complaint_id, c.student_id, s.full_name, s.email,
@@ -385,10 +841,11 @@ app.get('/api/admin/complaints', authenticate, allowRoles('admin'), asyncRoute(a
          FROM Complaint c
          JOIN Student s ON s.student_id = c.student_id
          WHERE ($1 = '' OR c.status = $1)
+           AND ($4::char IS NULL OR s.gender = $4)
          ORDER BY CASE c.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
                   c.created_at DESC
          LIMIT $2 OFFSET $3`,
-        [status, limit, offset],
+        [status, limit, offset, genderScope],
       );
 
   res.json({
@@ -408,21 +865,38 @@ app.patch('/api/admin/complaints/:complaintId/status', authenticate, allowRoles(
     return res.status(400).json({ error: 'Provide a valid complaint ID and status' });
   }
   const result = await db.query(
-    'UPDATE Complaint SET status = $1 WHERE complaint_id = $2 RETURNING complaint_id, status',
-    [status, complaintId],
+    `UPDATE Complaint c SET status = $1
+     WHERE c.complaint_id = $2
+       AND EXISTS (
+         SELECT 1 FROM Student s
+         WHERE s.student_id = c.student_id
+           AND ($3::char IS NULL OR s.gender = $3)
+       )
+     RETURNING c.complaint_id, c.status`,
+    [status, complaintId, adminGenderScope(req.session)],
   );
   if (!result.rows[0]) return res.status(404).json({ error: 'Complaint does not exist' });
   res.json({ complaint: result.rows[0] });
 }));
 
 app.get('/api/admin/summary', authenticate, allowRoles('admin'), asyncRoute(async (req, res) => {
+  const genderScope = adminGenderScope(req.session);
   const result = await db.query(
     `SELECT
-       (SELECT COUNT(*)::int FROM Student) AS students,
-       (SELECT COUNT(*)::int FROM Allocation) AS allocated_students,
-       (SELECT COUNT(*)::int FROM Bed) AS beds,
-       (SELECT COUNT(*)::int FROM Complaint WHERE status IN ('pending', 'in_progress')) AS open_complaints,
-       (SELECT COALESCE(SUM(amount), 0)::float FROM FinePayment) AS paid_amount`,
+       (SELECT COUNT(*)::int FROM Student s
+        WHERE ($1::char IS NULL OR s.gender = $1)) AS students,
+       (SELECT COUNT(*)::int FROM Allocation a JOIN Student s ON s.student_id = a.student_id
+        WHERE ($1::char IS NULL OR s.gender = $1)) AS allocated_students,
+       (SELECT COUNT(*)::int FROM Bed b JOIN Room r ON r.room_id = b.room_id
+        WHERE ($1::char IS NULL OR r.gender = $1)) AS beds,
+       (SELECT COUNT(*)::int FROM Complaint c JOIN Student s ON s.student_id = c.student_id
+        WHERE c.status IN ('pending', 'in_progress')
+          AND ($1::char IS NULL OR s.gender = $1)) AS open_complaints,
+       (SELECT COALESCE(SUM(p.amount), 0)::float
+        FROM FinePayment p JOIN Fine f ON f.fine_id = p.fine_id
+        JOIN Student s ON s.student_id = f.student_id
+        WHERE ($1::char IS NULL OR s.gender = $1)) AS paid_amount`,
+    [genderScope],
   );
   res.json({ summary: result.rows[0] });
 }));
@@ -438,6 +912,7 @@ app.get('/api/admin/records', authenticate, allowRoles('admin'), asyncRoute(asyn
   const limit = isAll ? null : Math.min(Math.max(Number(limitParam || 100), 1), 500);
   const page = Math.max(Number(req.query.page || 1), 1);
   const offset = isAll ? 0 : (page - 1) * limit;
+  const genderScope = adminGenderScope(req.session);
 
   const [fines, gateLogs, payments, counts] = await Promise.all([
     isAll
@@ -447,8 +922,9 @@ app.get('/api/admin/records', authenticate, allowRoles('admin'), asyncRoute(asyn
            FROM Fine f JOIN Student s ON s.student_id = f.student_id
            JOIN FineType ft ON ft.fine_type_id = f.fine_type_id
            WHERE ($1::int IS NULL OR f.student_id = $1)
+             AND ($2::char IS NULL OR s.gender = $2)
            ORDER BY f.issued_on DESC`,
-          [requestedStudentId],
+          [requestedStudentId, genderScope],
         )
       : db.query(
           `SELECT f.fine_id, f.student_id, s.full_name, f.amount, f.reason, f.issued_on,
@@ -456,25 +932,28 @@ app.get('/api/admin/records', authenticate, allowRoles('admin'), asyncRoute(asyn
            FROM Fine f JOIN Student s ON s.student_id = f.student_id
            JOIN FineType ft ON ft.fine_type_id = f.fine_type_id
            WHERE ($1::int IS NULL OR f.student_id = $1)
+             AND ($4::char IS NULL OR s.gender = $4)
            ORDER BY f.issued_on DESC
            LIMIT $2 OFFSET $3`,
-          [requestedStudentId, limit, offset],
+          [requestedStudentId, limit, offset, genderScope],
         ),
     isAll
       ? db.query(
           `SELECT g.log_id, g.student_id, s.full_name, g.direction, g.logged_at
            FROM GateLog g JOIN Student s ON s.student_id = g.student_id
            WHERE ($1::int IS NULL OR g.student_id = $1)
+             AND ($2::char IS NULL OR s.gender = $2)
            ORDER BY g.logged_at DESC`,
-          [requestedStudentId],
+          [requestedStudentId, genderScope],
         )
       : db.query(
           `SELECT g.log_id, g.student_id, s.full_name, g.direction, g.logged_at
            FROM GateLog g JOIN Student s ON s.student_id = g.student_id
            WHERE ($1::int IS NULL OR g.student_id = $1)
+             AND ($4::char IS NULL OR s.gender = $4)
            ORDER BY g.logged_at DESC
            LIMIT $2 OFFSET $3`,
-          [requestedStudentId, limit, offset],
+          [requestedStudentId, limit, offset, genderScope],
         ),
     isAll
       ? db.query(
@@ -483,8 +962,9 @@ app.get('/api/admin/records', authenticate, allowRoles('admin'), asyncRoute(asyn
            FROM FinePayment p JOIN Fine f ON f.fine_id = p.fine_id
            JOIN Student s ON s.student_id = f.student_id
            WHERE ($1::int IS NULL OR f.student_id = $1)
+             AND ($2::char IS NULL OR s.gender = $2)
            ORDER BY p.paid_on DESC`,
-          [requestedStudentId],
+          [requestedStudentId, genderScope],
         )
       : db.query(
           `SELECT p.payment_id, f.student_id, s.full_name, p.fine_id, p.amount,
@@ -492,16 +972,24 @@ app.get('/api/admin/records', authenticate, allowRoles('admin'), asyncRoute(asyn
            FROM FinePayment p JOIN Fine f ON f.fine_id = p.fine_id
            JOIN Student s ON s.student_id = f.student_id
            WHERE ($1::int IS NULL OR f.student_id = $1)
+             AND ($4::char IS NULL OR s.gender = $4)
            ORDER BY p.paid_on DESC
            LIMIT $2 OFFSET $3`,
-          [requestedStudentId, limit, offset],
+          [requestedStudentId, limit, offset, genderScope],
         ),
     db.query(
       `SELECT
-         (SELECT COUNT(*)::int FROM Fine WHERE ($1::int IS NULL OR student_id = $1)) AS total_fines,
-         (SELECT COUNT(*)::int FROM GateLog WHERE ($1::int IS NULL OR student_id = $1)) AS total_gate_logs,
-         (SELECT COUNT(*)::int FROM FinePayment fp JOIN Fine f ON f.fine_id = fp.fine_id WHERE ($1::int IS NULL OR f.student_id = $1)) AS total_payments`,
-      [requestedStudentId],
+         (SELECT COUNT(*)::int FROM Fine f JOIN Student s ON s.student_id = f.student_id
+          WHERE ($1::int IS NULL OR f.student_id = $1)
+            AND ($2::char IS NULL OR s.gender = $2)) AS total_fines,
+         (SELECT COUNT(*)::int FROM GateLog g JOIN Student s ON s.student_id = g.student_id
+          WHERE ($1::int IS NULL OR g.student_id = $1)
+            AND ($2::char IS NULL OR s.gender = $2)) AS total_gate_logs,
+         (SELECT COUNT(*)::int FROM FinePayment fp JOIN Fine f ON f.fine_id = fp.fine_id
+          JOIN Student s ON s.student_id = f.student_id
+          WHERE ($1::int IS NULL OR f.student_id = $1)
+            AND ($2::char IS NULL OR s.gender = $2)) AS total_payments`,
+      [requestedStudentId, genderScope],
     ),
   ]);
 
@@ -516,6 +1004,7 @@ app.get('/api/admin/records', authenticate, allowRoles('admin'), asyncRoute(asyn
 }));
 
 app.get('/api/admin/fine-risk', authenticate, allowRoles('admin'), asyncRoute(async (req, res) => {
+  const genderScope = adminGenderScope(req.session);
   const students = await db.query(
     `SELECT s.student_id, s.full_name, s.email, s.block_number,
             COUNT(f.fine_id) FILTER (WHERE f.issued_on >= CURRENT_DATE - INTERVAL '3 months')::int AS fines_3m,
@@ -529,8 +1018,10 @@ app.get('/api/admin/fine-risk', authenticate, allowRoles('admin'), asyncRoute(as
      LEFT JOIN LATERAL (
        SELECT MIN(fp.paid_on)::date AS paid_on FROM FinePayment fp WHERE fp.fine_id = f.fine_id
      ) payment ON true
+     WHERE ($1::char IS NULL OR s.gender = $1)
      GROUP BY s.student_id
      ORDER BY s.full_name`,
+    [genderScope],
   );
   if (students.rows.length === 0) return res.json({ reports: [] });
   const features = students.rows.map((student) => ({
@@ -582,6 +1073,7 @@ app.get('/api/students/:studentId/fine-risk', authenticate, asyncRoute(async (re
   if (req.session.role !== 'admin' && req.session.id !== studentId) {
     return res.status(403).json({ error: 'You may only view your own fine-risk report' });
   }
+  const genderScope = req.session.role === 'admin' ? adminGenderScope(req.session) : null;
   const result = await db.query(
     `SELECT
        COUNT(f.fine_id) FILTER (WHERE f.issued_on >= CURRENT_DATE - INTERVAL '3 months')::int AS fines_3m,
@@ -592,8 +1084,10 @@ app.get('/api/students/:studentId/fine-risk', authenticate, asyncRoute(async (re
        COALESCE(AVG(payment.paid_on - f.issued_on) FILTER (WHERE f.status = 'paid' AND payment.paid_on IS NOT NULL AND f.issued_on >= CURRENT_DATE - INTERVAL '3 months'), 0)::float AS avg_days_to_pay
      FROM Student s LEFT JOIN Fine f ON f.student_id = s.student_id
      LEFT JOIN LATERAL (SELECT MIN(fp.paid_on)::date AS paid_on FROM FinePayment fp WHERE fp.fine_id = f.fine_id) payment ON true
-     WHERE s.student_id = $1 GROUP BY s.student_id`,
-    [studentId],
+     WHERE s.student_id = $1
+       AND ($2::char IS NULL OR s.gender = $2)
+     GROUP BY s.student_id`,
+    [studentId, genderScope],
   );
   if (!result.rows[0]) return res.status(404).json({ error: 'Student does not exist' });
   const features = result.rows[0];
@@ -604,6 +1098,7 @@ app.get('/api/students/:studentId/fine-risk', authenticate, asyncRoute(async (re
 }));
 
 app.post('/api/admin/matching/run', authenticate, allowRoles('admin'), asyncRoute(async (req, res) => {
+  const genderScope = adminGenderScope(req.session);
   const eligible = await db.query(
     `SELECT s.student_id, s.full_name, s.gender, s.block_number,
             rp.q1_bedtime, rp.q2_wakeup, rp.q3_tidiness, rp.q4_study_style,
@@ -614,7 +1109,9 @@ app.post('/api/admin/matching/run', authenticate, allowRoles('admin'), asyncRout
      WHERE NOT EXISTS (
        SELECT 1 FROM Allocation a WHERE a.student_id = s.student_id
      )
+       AND ($1::char IS NULL OR s.gender = $1)
      ORDER BY s.student_id`,
+    [genderScope],
   );
   if (eligible.rows.length === 0) {
     return res.status(409).json({ error: 'No students with submitted preferences are awaiting allocation' });
@@ -627,7 +1124,12 @@ app.post('/api/admin/matching/run', authenticate, allowRoles('admin'), asyncRout
             ) ORDER BY b.bed_id) FILTER (WHERE b.bed_id IS NOT NULL), '[]'::json) AS beds
      FROM Room r
      LEFT JOIN Bed b ON b.room_id = r.room_id
-     WHERE NOT EXISTS (
+     WHERE ($1::char IS NULL OR r.gender = $1)
+       AND NOT EXISTS (
+         SELECT 1 FROM MatchGroup mg
+         WHERE mg.room_id = r.room_id AND mg.status = 'pending'
+       )
+       AND NOT EXISTS (
        SELECT 1 FROM Allocation a JOIN Bed occupied_bed ON occupied_bed.bed_id = a.bed_id
        WHERE occupied_bed.room_id = r.room_id
      )
@@ -635,6 +1137,7 @@ app.post('/api/admin/matching/run', authenticate, allowRoles('admin'), asyncRout
      HAVING COUNT(b.bed_id) = r.capacity
         AND COUNT(b.bed_id) FILTER (WHERE b.is_occupied) = 0
      ORDER BY r.capacity DESC, r.room_id`,
+    [genderScope],
   );
   if (roomResult.rows.length === 0) {
     return res.status(409).json({ error: 'No empty rooms with a complete set of beds are available' });
@@ -665,8 +1168,25 @@ app.post('/api/admin/matching/run', authenticate, allowRoles('admin'), asyncRout
   let runId;
   try {
     await client.query('BEGIN');
-    await client.query("UPDATE MatchGroup SET status = 'rejected' WHERE status = 'pending'");
-    await client.query("UPDATE MatchSuggestion SET status = 'rejected' WHERE status = 'pending'");
+    await client.query(
+      `UPDATE MatchGroup mg SET status = 'rejected'
+       FROM Room r
+       WHERE mg.room_id = r.room_id AND mg.status = 'pending'
+         AND ($1::char IS NULL OR r.gender = $1)`,
+      [genderScope],
+    );
+    await client.query(
+      `UPDATE MatchSuggestion suggestion SET status = 'rejected'
+       WHERE suggestion.status = 'pending'
+         AND EXISTS (
+           SELECT 1 FROM MatchGroup mg
+           JOIN Room r ON r.room_id = mg.room_id
+           WHERE mg.run_id = suggestion.run_id
+             AND mg.status = 'rejected'
+             AND ($1::char IS NULL OR r.gender = $1)
+         )`,
+      [genderScope],
+    );
     const run = await client.query(
       'INSERT INTO MatchRun (k, silhouette) VALUES ($1, NULL) RETURNING run_id',
       [mlResponse.data.cluster_count],
@@ -730,8 +1250,15 @@ app.post('/api/admin/matching/run', authenticate, allowRoles('admin'), asyncRout
 }));
 
 app.get('/api/admin/matching/latest', authenticate, allowRoles('admin'), asyncRoute(async (req, res) => {
+  const genderScope = adminGenderScope(req.session);
   const runResult = await db.query(
-    'SELECT run_id, run_at, k, silhouette FROM MatchRun ORDER BY run_at DESC, run_id DESC LIMIT 1',
+    `SELECT run_id, run_at, k, silhouette FROM MatchRun run
+     WHERE ($1::char IS NULL OR EXISTS (
+       SELECT 1 FROM MatchGroup mg JOIN Room r ON r.room_id = mg.room_id
+       WHERE mg.run_id = run.run_id AND r.gender = $1
+     ))
+     ORDER BY run_at DESC, run_id DESC LIMIT 1`,
+    [genderScope],
   );
   if (!runResult.rows[0]) {
     return res.json({ run: null, groups: [], compatibility_threshold: COMPATIBILITY_THRESHOLD });
@@ -767,9 +1294,10 @@ app.get('/api/admin/matching/latest', authenticate, allowRoles('admin'), asyncRo
      LEFT JOIN Student s ON s.student_id = m.student_id
      LEFT JOIN Bed b ON b.bed_id = m.bed_id
      WHERE mg.run_id = $1
+       AND ($2::char IS NULL OR r.gender = $2)
      GROUP BY mg.group_id, r.room_id
      ORDER BY r.block_number, r.room_number`,
-    [run.run_id],
+    [run.run_id, genderScope],
   );
   res.json({
     run,
@@ -781,6 +1309,7 @@ app.get('/api/admin/matching/latest', authenticate, allowRoles('admin'), asyncRo
 app.post('/api/admin/matching/:runId/confirm', authenticate, allowRoles('admin'), asyncRoute(async (req, res) => {
   const runId = Number(req.params.runId);
   if (!Number.isInteger(runId) || runId < 1) return res.status(400).json({ error: 'Invalid matching run ID' });
+  const genderScope = adminGenderScope(req.session);
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
@@ -789,8 +1318,9 @@ app.post('/api/admin/matching/:runId/confirm', authenticate, allowRoles('admin')
               r.capacity AS room_capacity, r.gender, r.block_number AS room_block_number
        FROM MatchGroup mg JOIN Room r ON r.room_id = mg.room_id
        WHERE mg.run_id = $1 AND mg.status = 'pending'
+         AND ($2::char IS NULL OR r.gender = $2)
        FOR UPDATE OF mg, r`,
-      [runId],
+      [runId, genderScope],
     );
     if (!groupResult.rows.length) {
       await client.query('ROLLBACK');
@@ -1025,8 +1555,27 @@ app.post('/api/bookings', authenticate, allowRoles('student'), asyncRoute(async 
 }));
 
 app.get('/api/warden/trends', authenticate, allowRoles('admin'), asyncRoute(async (req, res) => {
+  const genderScope = adminGenderScope(req.session);
   const trends = await db.query(
-    'SELECT * FROM view_warden_complaint_trends ORDER BY complaint_month DESC, block_number, category',
+    `WITH monthly_complaints AS (
+       SELECT c.block_number, c.category,
+              DATE_TRUNC('month', c.created_at) AS complaint_month,
+              COUNT(c.complaint_id) AS current_month_count
+       FROM Complaint c
+       JOIN Student s ON s.student_id = c.student_id
+       WHERE ($1::char IS NULL OR s.gender = $1)
+       GROUP BY c.block_number, c.category, DATE_TRUNC('month', c.created_at)
+     )
+     SELECT block_number, category, complaint_month, current_month_count,
+            LAG(current_month_count, 1, 0) OVER (
+              PARTITION BY block_number, category ORDER BY complaint_month
+            ) AS previous_month_count,
+            current_month_count - LAG(current_month_count, 1, 0) OVER (
+              PARTITION BY block_number, category ORDER BY complaint_month
+            ) AS month_over_month_change
+     FROM monthly_complaints
+     ORDER BY complaint_month DESC, block_number, category`,
+    [genderScope],
   );
   res.json(trends.rows);
 }));
@@ -1038,9 +1587,17 @@ app.use((req, res) => {
 app.use((error, req, res, next) => {
   console.error('API request failed:', error.message);
   if (res.headersSent) return next(error);
-  const status = axios.isAxiosError(error) ? 503 : 500;
+  const status = error.code === '23505'
+    ? 409
+    : error.statusCode || (axios.isAxiosError(error) ? 503 : 500);
   res.status(status).json({
-    error: status === 503 ? 'A dependent service is unavailable' : 'The request could not be completed',
+    error: status === 503
+      ? 'A dependent service is unavailable'
+      : status === 409
+        ? 'An account with those details already exists'
+        : status < 500
+          ? error.message
+          : 'The request could not be completed',
   });
 });
 
@@ -1049,27 +1606,16 @@ let serverInstance;
 async function ensureAdminUser() {
   try {
     const adminPassword = process.env.ADMIN_DEFAULT_PASSWORD || 'admin123';
-    const compliantHash = hashPassword(adminPassword);
-    const existing = await db.query(
-      "SELECT admin_id, password_hash FROM Admin WHERE username = 'admin'",
+    const result = await db.query(
+      `INSERT INTO Admin (username, email, password_hash, full_name, role, hostel_type)
+       VALUES ('admin', 'admin@example.edu', $1, 'System Administrator', 'SUPER_ADMIN', 'all')
+       ON CONFLICT (username) DO UPDATE SET
+         role = 'SUPER_ADMIN',
+         hostel_type = 'all'
+       RETURNING admin_id`,
+      [adminPassword],
     );
-
-    if (existing.rows.length === 0) {
-      await db.query(
-        "INSERT INTO Admin (username, password_hash, full_name, role) VALUES ('admin', $1, 'System Administrator', 'SUPER_ADMIN')",
-        [compliantHash],
-      );
-      console.log("Admin user 'admin' initialized successfully with compliant scrypt hash.");
-    } else {
-      const currentHash = existing.rows[0].password_hash;
-      if (!verifyPassword(adminPassword, currentHash) && !verifyPassword('AdminSecure123!', currentHash)) {
-        await db.query(
-          "UPDATE Admin SET password_hash = $1 WHERE username = 'admin'",
-          [compliantHash],
-        );
-        console.log("Admin user 'admin' password hash updated successfully.");
-      }
-    }
+    if (result.rowCount) console.log("Admin user 'admin' initialized successfully.");
   } catch (error) {
     console.warn("Could not auto-seed admin account:", error.message);
   }
@@ -1077,11 +1623,10 @@ async function ensureAdminUser() {
 
 async function ensureStudentPasswords() {
   try {
-    const studentDefaultPassword = process.env.STUDENT_DEFAULT_PASSWORD || 'student123';
-    const studentHash = hashPassword(studentDefaultPassword);
+    const studentDefaultPassword = process.env.STUDENT_DEFAULT_PASSWORD || 'StudentPass123';
     await db.query(
       "UPDATE Student SET password_hash = $1 WHERE password_hash IS NULL",
-      [studentHash],
+      [studentDefaultPassword],
     );
   } catch (error) {
     console.warn("Could not ensure student default passwords:", error.message);
